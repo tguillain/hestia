@@ -204,8 +204,8 @@ scp -r <dossier-du-projet>\deploy <utilisateur>@hestia.local:~/hestia-maj
 ssh -t <utilisateur>@hestia.local "sudo bash ~/hestia-maj/install.sh"
 ```
 
-La configuration et les données sont conservées. Une fois la bascule faite (Caddy démarré),
-ajoute `--bascule` à la fin de la deuxième commande, à l’intérieur des guillemets.
+La configuration et les données sont conservées. Après la bascule, Caddy reste démarré :
+plus besoin d’ajouter `--bascule`. Pars toujours d’une copie fraîche du dossier `deploy`.
 
 ## Modifier la configuration
 

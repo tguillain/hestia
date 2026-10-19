@@ -80,7 +80,7 @@ systemctl restart hestia
 sleep 2
 systemctl --no-pager --lines=0 status hestia || true
 
-echo "== Caddy (installé mais arrêté jusqu'à la bascule des ports 80/443)"
+echo "== Caddy (arrêté jusqu’à la bascule des ports 80/443, puis toujours démarré)"
 if ! command -v caddy >/dev/null; then
   apt-get update
   apt-get install -y caddy
@@ -98,7 +98,8 @@ if [[ "$caddy_source" != *example* || "$first_caddy_install" == true ]]; then
   fi
 fi
 caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
-if [[ "${1:-}" == "--bascule" ]]; then
+# Once the switch-over is done Caddy stays enabled: a later run must keep it serving.
+if [[ "${1:-}" == "--bascule" ]] || systemctl is-enabled --quiet caddy 2>/dev/null; then
   systemctl enable caddy
   systemctl restart caddy
   echo "Caddy démarré."
