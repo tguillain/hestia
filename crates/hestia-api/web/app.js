@@ -11,6 +11,8 @@ let charts = [];
 const chartViews = new Set();
 let chartTimer = null;
 let currentUser = null;
+// Newer version published on GitHub, as last seen by the Pi.
+let availableUpdate = null;
 
 const ICONS = {
   house: '<path d="M3 11 12 4l9 7v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19.5Z"/><circle cx="12" cy="14.5" r="2.5"/>',
@@ -512,6 +514,7 @@ async function showDashboard() {
   setDevices(list);
   charts = configured;
   currentUser = session.user;
+  availableUpdate = session.update ?? null;
   route();
   startEvents();
 }
@@ -573,7 +576,12 @@ function onSettingsPage() {
 
 function topbar(user) {
   const settings = onSettingsPage();
-  const navigate = h('a', { class: 'ghost', href: settings ? '#' : '#reglages' }, icon(settings ? 'house' : 'gear'), settings ? 'Tableau de bord' : 'Réglages');
+  const updateNote = availableUpdate ? `Nouvelle version ${availableUpdate} disponible` : null;
+  const navigate = settings
+    ? h('a', { class: 'ghost', href: '#' }, icon('house'), 'Tableau de bord')
+    : h('a', { class: 'ghost', href: '#reglages', title: updateNote },
+      icon('gear'), 'Réglages',
+      updateNote ? h('span', { class: 'update-dot', role: 'img', 'aria-label': updateNote }) : null);
   const logout = h('button', { class: 'ghost', title: `Connecté : ${user}` }, 'Déconnexion');
   logout.addEventListener('click', async () => {
     await api('POST', '/api/logout').catch(() => {});
@@ -945,11 +953,12 @@ function updateSettings() {
 function onlineUpdate() {
   const check = h('button', { class: 'primary inline' }, 'Chercher une mise à jour');
   const result = h('div', { class: 'setting-body' });
-  check.addEventListener('click', async () => {
+  const lookUp = async () => {
     check.disabled = true;
     result.replaceChildren(line('Interrogation de GitHub…', 'pending-line'));
     const ok = await attempt(async () => {
       const report = await api('GET', '/api/setup/update/latest');
+      availableUpdate = report.update_available ? report.latest : null;
       const published = report.published ? ` (publiée le ${new Date(report.published).toLocaleDateString('fr-FR')})` : '';
       if (!report.update_available) {
         result.replaceChildren(line(`Hestia est à jour. Dernière version publiée : ${report.latest}${published}.`, 'meta'));
@@ -974,7 +983,10 @@ function onlineUpdate() {
     });
     if (!ok) result.replaceChildren();
     check.disabled = false;
-  });
+  };
+  check.addEventListener('click', lookUp);
+  // The Pi already saw a new version (dot on « Réglages »): show it without a click.
+  if (availableUpdate) lookUp();
   return h('div', { class: 'setting-body' }, check, result);
 }
 
@@ -1068,6 +1080,7 @@ async function reload() {
       const [session, configured] = await Promise.all([api('GET', '/api/session'), api('GET', '/api/charts')]);
       charts = configured;
       currentUser = session.user;
+      availableUpdate = session.update ?? null;
       renderDashboard(currentUser);
     }
   } catch (error) {

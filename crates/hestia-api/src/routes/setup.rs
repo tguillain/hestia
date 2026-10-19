@@ -39,6 +39,8 @@ pub(crate) enum FreeboxFlow {
 pub(crate) struct SetupState {
     pub config: Setup,
     freebox_flow: Mutex<FreeboxFlow>,
+    /// Newer version published on GitHub, from the last check.
+    available_update: Mutex<Option<String>>,
 }
 
 impl SetupState {
@@ -46,7 +48,22 @@ impl SetupState {
         Self {
             config,
             freebox_flow: Mutex::new(FreeboxFlow::Idle),
+            available_update: Mutex::new(None),
         }
+    }
+
+    pub(crate) fn available_update(&self) -> Option<String> {
+        self.available_update
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) fn set_available_update(&self, version: Option<String>) {
+        *self
+            .available_update
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = version;
     }
 
     fn flow(&self) -> FreeboxFlow {

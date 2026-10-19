@@ -80,8 +80,11 @@ pub(crate) async fn logout(State(state): State<AppState>, user: CurrentUser) -> 
     (StatusCode::NO_CONTENT, [(SET_COOKIE, expired)]).into_response()
 }
 
-pub(crate) async fn current(user: CurrentUser) -> Json<serde_json::Value> {
-    Json(json!({ "user": user.name }))
+pub(crate) async fn current(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Json<serde_json::Value> {
+    Json(json!({ "user": user.name, "update": state.setup.available_update() }))
 }
 
 fn session_token(headers: &HeaderMap) -> Option<String> {

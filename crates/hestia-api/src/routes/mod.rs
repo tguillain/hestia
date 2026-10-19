@@ -15,7 +15,7 @@ use crate::AppState;
 pub use history::{ChartConfig, SeriesSelector};
 pub(crate) use session::CurrentUser;
 pub(crate) use setup::SetupState;
-pub(crate) use update::{install_latest, latest_report};
+pub(crate) use update::{install_latest, latest_report, watch as watch_updates};
 
 /// Upper bound for an uploaded program (today about 5 MB).
 const MAX_PROGRAM: usize = 64 * 1024 * 1024;

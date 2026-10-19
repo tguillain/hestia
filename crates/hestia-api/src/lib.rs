@@ -56,6 +56,8 @@ pub struct Setup {
     pub restart: Option<Arc<tokio::sync::Notify>>,
     /// `owner/repo` whose GitHub releases are offered as updates.
     pub update_repo: Option<String>,
+    /// Checks `update_repo` once a day so the dashboard can flag a new version.
+    pub watch_updates: bool,
     /// Bumped to ask the drivers to look for new devices.
     pub discovery: Option<tokio::sync::watch::Sender<u64>>,
 }
@@ -70,13 +72,19 @@ pub(crate) struct AppState {
     event_streams: Arc<Semaphore>,
 }
 
+/// Builds the HTTP routes. With `setup.watch_updates`, also starts the daily update check,
+/// so it must then be called inside the Tokio runtime.
 pub fn router(hub: Arc<Hub>, auth: Arc<Auth>, dashboard: Dashboard) -> Router {
+    let setup = Arc::new(routes::SetupState::new(dashboard.setup));
+    if setup.config.watch_updates {
+        tokio::spawn(routes::watch_updates(Arc::clone(&setup)));
+    }
     let state = AppState {
         hub,
         auth,
         history: dashboard.history,
         charts: Arc::new(dashboard.charts),
-        setup: Arc::new(routes::SetupState::new(dashboard.setup)),
+        setup,
         event_streams: Arc::new(Semaphore::new(MAX_EVENT_STREAMS)),
     };
     routes::api()

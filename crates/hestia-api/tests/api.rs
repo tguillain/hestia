@@ -158,6 +158,10 @@ async fn logged_in_user_reads_and_commands_devices() {
 
     let session = json(call(&router, get("/api/session", Some(&cookie))).await).await;
     assert_eq!(session["user"], "alice");
+    assert!(
+        session["update"].is_null(),
+        "no update known before any check"
+    );
     let devices = json(call(&router, get("/api/devices", Some(&cookie))).await).await;
     assert_eq!(devices[0]["id"], "fake:lamp");
     assert_eq!(devices[0]["points"][0]["value"], false);

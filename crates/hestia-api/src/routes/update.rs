@@ -3,6 +3,7 @@
 //! is kept for rolling back.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Json;
@@ -12,7 +13,7 @@ use axum::http::HeaderMap;
 use serde_json::{Value as Json_, json};
 use tracing::{info, warn};
 
-use super::CurrentUser;
+use super::{CurrentUser, SetupState};
 use crate::AppState;
 use crate::error::ApiError;
 use crate::{github, release};
@@ -24,6 +25,9 @@ const DOWNLOAD: &str = "hestia.download";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Leaves the HTTP answer time to reach the browser before stopping.
 const RESTART_DELAY: Duration = Duration::from_millis(800);
+const WATCH_FIRST: Duration = Duration::from_secs(60);
+const WATCH_EVERY: Duration = Duration::from_secs(24 * 3600);
+const WATCH_RETRY: Duration = Duration::from_secs(3600);
 
 #[cfg(target_arch = "aarch64")]
 const ELF_MACHINE: u16 = 0xB7;
@@ -74,12 +78,42 @@ pub(crate) async fn latest_report(state: &AppState) -> Result<Json_, ApiError> {
         .await
         .map_err(ApiError::BadGateway)?;
     let current = &state.setup.config.version;
+    let available = github::is_newer(&latest.version, current);
+    state
+        .setup
+        .set_available_update(available.then(|| latest.version.clone()));
     Ok(json!({
         "current": current,
         "latest": latest.version,
         "published": latest.published,
-        "update_available": github::is_newer(&latest.version, current),
+        "update_available": available,
     }))
+}
+
+/// Looks for a newer release a minute after start-up, then once a day, so the dashboard
+/// can show that one is waiting.
+pub(crate) async fn watch(setup: Arc<SetupState>) {
+    let Some(repo) = setup.config.update_repo.clone() else {
+        return;
+    };
+    tokio::time::sleep(WATCH_FIRST).await;
+    loop {
+        let wait = match github::latest(&repo).await {
+            Ok(latest) => {
+                let available = github::is_newer(&latest.version, &setup.config.version);
+                if available {
+                    info!(version = latest.version, "update available");
+                }
+                setup.set_available_update(available.then_some(latest.version));
+                WATCH_EVERY
+            }
+            Err(reason) => {
+                warn!(reason, "cannot check for updates");
+                WATCH_RETRY
+            }
+        };
+        tokio::time::sleep(wait).await;
+    }
 }
 
 /// Downloads the latest signed release from GitHub and installs it.

@@ -165,7 +165,8 @@ Puis, depuis le PC : `scp <utilisateur>@hestia.local:~/hestia-sauvegarde-*.tgz .
 
 ## Mise à jour
 
-Les versions sont publiées sur GitHub (section `[update]` de `hestia.toml`). Dans
+Les versions sont publiées sur GitHub (section `[update]` de `hestia.toml`). Le Pi regarde une fois par jour s’il y en a une nouvelle :
+une pastille apparaît alors à côté de **Réglages**. Dans
 **Réglages → Mise à jour**, **Chercher une mise à jour** compare avec la dernière version
 publiée et propose **Installer la version …**. Une IA connectée en MCP avec un jeton
 « commande » peut faire la même chose (outils `check_update` et `install_update`).
