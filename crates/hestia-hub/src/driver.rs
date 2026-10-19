@@ -113,6 +113,13 @@ impl DriverContext {
         }
     }
 
+    /// Forgets a device the user removed, as opposed to one merely unreachable.
+    pub fn remove_device(&self, device: &DeviceId) {
+        if self.owns(device) {
+            self.hub.remove_device(device);
+        }
+    }
+
     /// Next command to execute. Commands whose deadline passed are refused, never run late.
     pub async fn next_command(&mut self) -> PendingCommand {
         loop {

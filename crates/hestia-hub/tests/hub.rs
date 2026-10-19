@@ -10,12 +10,14 @@ use hestia_hub::{
 
 struct FakeLamp {
     panic_on_next_command: AtomicBool,
+    remove_on_next_command: AtomicBool,
 }
 
 impl FakeLamp {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             panic_on_next_command: AtomicBool::new(false),
+            remove_on_next_command: AtomicBool::new(false),
         })
     }
 }
@@ -69,7 +71,12 @@ impl Driver for FakeLamp {
                     "simulated driver bug"
                 );
                 let command = pending.command().clone();
-                ctx.set_state(&command.device, &command.point, command.value);
+                if self.remove_on_next_command.swap(false, Ordering::SeqCst) {
+                    ctx.remove_device(&"other:lamp".parse().unwrap());
+                    ctx.remove_device(&command.device);
+                } else {
+                    ctx.set_state(&command.device, &command.point, command.value);
+                }
                 pending.succeed();
             }
         })
@@ -209,4 +216,44 @@ async fn panicking_driver_is_restarted() {
         hub.value(&lamp_id(), "brightness"),
         Some(Value::Number(40.0))
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn removed_device_is_forgotten() {
+    let driver = FakeLamp::new();
+    let hub = started_hub(Arc::clone(&driver)).await;
+    spawn_driver(&hub, "other", FakeLamp::new());
+    let other: DeviceId = "other:lamp".parse().unwrap();
+    let watched = Arc::clone(&hub);
+    let watched_id = other.clone();
+    wait_until(move || {
+        watched
+            .device(&watched_id)
+            .is_some_and(|device| device.available)
+    })
+    .await;
+    let mut events = hub.subscribe();
+
+    driver.remove_on_next_command.store(true, Ordering::SeqCst);
+    hub.command(set("on", Value::Bool(true)), Origin::Ui)
+        .await
+        .unwrap();
+
+    assert!(hub.device(&lamp_id()).is_none());
+    assert_eq!(hub.value(&lamp_id(), "on"), None);
+    assert!(
+        hub.device(&other).is_some(),
+        "a driver cannot remove another driver's device"
+    );
+    let mut removed = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        if let Event::DeviceRemoved { device } = event {
+            removed.push(device);
+        }
+    }
+    assert_eq!(removed, [lamp_id()]);
+    assert!(matches!(
+        hub.command(set("on", Value::Bool(false)), Origin::Ui).await,
+        Err(CommandError::UnknownDevice(_))
+    ));
 }

@@ -11,6 +11,9 @@ pub enum Event {
     DeviceUpdated {
         device: DeviceId,
     },
+    DeviceRemoved {
+        device: DeviceId,
+    },
     State {
         device: DeviceId,
         point: String,

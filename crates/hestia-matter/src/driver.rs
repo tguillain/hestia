@@ -323,7 +323,7 @@ impl MatterDriver {
                     warn!(node = native_id, %error, "Matter device not told it was removed");
                 }
                 if let Ok(id) = ctx.device_id(&native_id) {
-                    ctx.set_available(&id, false);
+                    ctx.remove_device(&id);
                 }
                 info!(node = native_id, "Matter device removed");
                 let _ = reply.send(Ok(()));

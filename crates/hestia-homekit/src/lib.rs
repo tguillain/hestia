@@ -199,6 +199,7 @@ async fn follow_hub(bridge: Arc<Bridge>) {
     loop {
         match events.recv().await {
             Ok(Event::DeviceUpdated { .. }) => bridge.sync_lights(),
+            Ok(Event::DeviceRemoved { device }) => bridge.forget_light(&device),
             Ok(Event::State { device, point, .. }) => bridge.notify(&device, &point),
             Ok(_) | Err(RecvError::Lagged(_)) => {}
             Err(RecvError::Closed) => return,

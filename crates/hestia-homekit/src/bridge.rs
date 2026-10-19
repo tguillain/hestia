@@ -162,6 +162,18 @@ impl Bridge {
         }
     }
 
+    /// Drops the accessory of a device the hub no longer declares.
+    pub(crate) fn forget_light(&self, device: &DeviceId) {
+        match self.state().forget_light(device) {
+            Ok(true) => {
+                info!(%device, "HomeKit accessory removed");
+                self.advertise();
+            }
+            Ok(false) => {}
+            Err(error) => warn!(%error, "cannot save HomeKit accessories"),
+        }
+    }
+
     /// Pushes new values to subscribed controllers after a hub state change.
     pub(crate) fn notify(&self, device: &DeviceId, point: &str) {
         let (lights, serial) = self.snapshot();

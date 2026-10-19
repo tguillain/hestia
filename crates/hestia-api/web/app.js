@@ -916,7 +916,7 @@ function matterSettings() {
           if (!confirm(`Retirer ${device.vendor} ${device.product} de Hestia ?`)) return;
           remove.disabled = true;
           if (await attempt(() => api('DELETE', `/api/setup/matter/devices/${encodeURIComponent(device.id)}`))) {
-            toast('Appareil retiré. Il disparaîtra du tableau de bord au prochain redémarrage.');
+            toast('Appareil retiré.');
             load();
           }
           remove.disabled = false;
@@ -1116,7 +1116,7 @@ function stopEvents() {
 
 function apply(event) {
   const device = devices.get(event.device);
-  if (event.type === 'device_updated' || !device) {
+  if (event.type === 'device_updated' || event.type === 'device_removed' || !device) {
     scheduleReload();
     return;
   }

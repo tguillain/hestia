@@ -219,6 +219,10 @@ async fn pairs_then_controls_a_light() {
         .remove(id.native().to_owned())
         .await
         .expect("removal");
+    assert!(
+        hub.devices().iter().all(|device| device.id != id),
+        "removed device gone from the hub"
+    );
     let stored = std::fs::read_to_string(data_dir.join("matter.json")).unwrap();
     assert!(stored.contains("\"devices\": []"));
     let _ = std::fs::remove_dir_all(&data_dir);

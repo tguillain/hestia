@@ -123,6 +123,7 @@ async fn log_events(hub: Arc<Hub>) {
                 info!(%device, available, "availability");
             }
             Ok(Event::DeviceUpdated { device }) => info!(%device, "device declared"),
+            Ok(Event::DeviceRemoved { device }) => info!(%device, "device removed"),
             Ok(Event::Command { .. }) => {}
             Err(RecvError::Lagged(skipped)) => warn!(skipped, "event log lagged"),
             Err(RecvError::Closed) => return,

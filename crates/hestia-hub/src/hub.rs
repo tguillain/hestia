@@ -283,6 +283,13 @@ impl Hub {
         });
     }
 
+    pub(crate) fn remove_device(&self, id: &DeviceId) {
+        if self.write().devices.remove(id).is_none() {
+            return;
+        }
+        self.emit(Event::DeviceRemoved { device: id.clone() });
+    }
+
     pub(crate) fn mark_driver_down(&self, instance: &str) {
         let owned: Vec<DeviceId> = self
             .read()
