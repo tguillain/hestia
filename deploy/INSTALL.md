@@ -215,8 +215,31 @@ hestia check-config
 sudo systemctl restart hestia
 ```
 
+## Appareils Matter
+
+Hestia pilote aussi les lumières Matter en Wi-Fi, en local, sur son propre réseau Matter.
+L'appareil reste utilisable dans l'app de son fabricant (et dans Apple Maison s'il y est déjà).
+
+1. Ajoute le pilote dans `/etc/hestia/hestia.toml`, puis redémarre (voir « Modifier la
+   configuration ») :
+   ```toml
+   [[driver]]
+   id = "matter"
+   kind = "matter"
+   ```
+2. Dans l'app du fabricant (Govee Home…), ouvre l'appareil → Matter → partager avec un autre
+   écosystème. L'app affiche un code à 11 chiffres, valable environ 15 minutes.
+3. Dans Hestia, **Réglages → Matter** : saisis le code et clique sur **Appairer**. Si l'appareil
+   n'est pas trouvé, indique aussi son adresse IP (Freebox OS → Périphériques réseau).
+
+Le réseau Matter de Hestia (ses clés) est dans `/var/lib/hestia/matter.json` : à sauvegarder avec
+le reste du dossier de données. Le perdre oblige à appairer de nouveau chaque appareil.
+
 ## Dépannage
 
+- **L'appairage Matter échoue.** Rouvre le partage dans l'app du fabricant pour obtenir un code
+  neuf, vérifie que l'appareil et le Pi sont sur le même réseau, puis réessaie avec l'adresse IP
+  de l'appareil. Pour voir ce qui se passe : `journalctl -u hestia | grep -i matter`.
 - **Les lampes n'apparaissent pas.** Dans l'app Govee, ouvre chaque lampe → réglages → active le
   **Contrôle LAN**. Le Pi doit être sur le même réseau. Pour voir ce qui se passe :
   `journalctl -u hestia | grep -i lamp`.

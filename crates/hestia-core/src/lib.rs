@@ -1,5 +1,6 @@
 //! Vocabulary shared by every part of hestia. Pure data, no I/O.
 
+pub mod color;
 mod command;
 mod device;
 mod point;

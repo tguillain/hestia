@@ -65,6 +65,16 @@ name = "Raspberry Pi"
 id = "freebox"
 kind = "freebox"
 
+# Appareils Matter (lumières), appairés depuis Réglages → Matter avec le code donné par
+# l'app du fabricant. Un seul pilote Matter possible.
+[[driver]]
+id = "matter"
+kind = "matter"
+
+# Réglage facultatif :
+# [driver.settings]
+# poll_interval_s = 5        # fréquence de lecture de l'état
+
 # Étiquettes affichées. L'identifiant reste stable même si le nom ou l'IP change.
 [[device]]
 id = "govee:a1b2c3d4e5f60718"

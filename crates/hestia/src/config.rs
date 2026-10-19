@@ -11,6 +11,7 @@ use hestia_govee::{GoveeConfig, GoveeDriver};
 use hestia_history::HistoryConfig;
 use hestia_homekit::HomeKitConfig;
 use hestia_hub::{Driver, Label};
+use hestia_matter::{MatterConfig, MatterDriver, PairingRequests, pairing_channel};
 use hestia_minecraft::{MinecraftConfig, MinecraftDriver};
 use hestia_ping::{PingConfig, PingDriver};
 use hestia_system::{SystemConfig, SystemDriver};
@@ -106,6 +107,7 @@ pub enum DriverKind {
     Ping,
     System,
     Freebox,
+    Matter,
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,7 +157,17 @@ impl Config {
             if !ids.insert(driver.id.as_str()) {
                 bail!("driver id {:?} is declared twice", driver.id);
             }
-            driver.build(&self.data_dir, &watch::channel(0).1)?;
+            driver.build(&self.data_dir, &DriverLinks::unused())?;
+        }
+        // One fabric per Hestia: a second driver would share `matter.json` with the first.
+        if self
+            .drivers
+            .iter()
+            .filter(|driver| driver.kind == DriverKind::Matter)
+            .count()
+            > 1
+        {
+            bail!("only one matter driver can be declared");
         }
         let mut devices = HashSet::new();
         for device in &self.devices {
@@ -189,19 +201,34 @@ impl Config {
     }
 }
 
+/// What the dashboard uses to reach drivers while they run.
+pub struct DriverLinks {
+    /// Bumped by "Rechercher des appareils".
+    pub discovery: watch::Receiver<u64>,
+    /// Pairing requests from the Settings page.
+    pub matter: PairingRequests,
+}
+
+impl DriverLinks {
+    /// Links nobody will ever use, for checking a configuration.
+    #[must_use]
+    pub fn unused() -> Self {
+        Self {
+            discovery: watch::channel(0).1,
+            matter: pairing_channel().1,
+        }
+    }
+}
+
 impl DriverConfig {
     /// # Errors
     /// Fails when the driver settings do not match its kind.
-    pub fn build(
-        &self,
-        data_dir: &Path,
-        discovery: &watch::Receiver<u64>,
-    ) -> anyhow::Result<Arc<dyn Driver>> {
+    pub fn build(&self, data_dir: &Path, links: &DriverLinks) -> anyhow::Result<Arc<dyn Driver>> {
         Ok(match self.kind {
             DriverKind::Govee => Arc::new(
                 GoveeDriver::new(self.settings::<GoveeConfig>()?)
                     .with_memory(data_dir.to_path_buf())
-                    .with_discovery(discovery.clone()),
+                    .with_discovery(links.discovery.clone()),
             ),
             DriverKind::Minecraft => {
                 Arc::new(MinecraftDriver::new(self.settings::<MinecraftConfig>()?))
@@ -219,6 +246,10 @@ impl DriverConfig {
                 self.settings::<FreeboxConfig>()?,
                 data_dir.to_path_buf(),
             )),
+            DriverKind::Matter => Arc::new(
+                MatterDriver::new(self.settings::<MatterConfig>()?, data_dir.to_path_buf())
+                    .with_pairing(&links.matter),
+            ),
         })
     }
 
@@ -236,7 +267,7 @@ mod tests {
     #[test]
     fn example_config_is_valid() {
         let config = Config::parse(include_str!("../../../deploy/hestia.example.toml")).unwrap();
-        assert_eq!(config.drivers.len(), 5);
+        assert_eq!(config.drivers.len(), 6);
         assert_eq!(config.labels().len(), 3);
     }
 
@@ -249,5 +280,7 @@ mod tests {
         assert!(Config::parse(bad_setting).is_err());
         let bad_id = "[[driver]]\nid = \"Govee:1\"\nkind = \"govee\"\n";
         assert!(Config::parse(bad_id).is_err());
+        let two_fabrics = "[[driver]]\nid = \"matter\"\nkind = \"matter\"\n[[driver]]\nid = \"matter2\"\nkind = \"matter\"\n";
+        assert!(Config::parse(two_fabrics).is_err());
     }
 }

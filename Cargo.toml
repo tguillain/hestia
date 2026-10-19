@@ -19,12 +19,16 @@ hestia-ping = { path = "crates/hestia-ping" }
 hestia-system = { path = "crates/hestia-system" }
 hestia-freebox = { path = "crates/hestia-freebox" }
 hestia-history = { path = "crates/hestia-history" }
+hestia-matter = { path = "crates/hestia-matter" }
 
 anyhow = "1"
+async-io = "2"
 argon2 = { version = "0.5", features = ["std"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
 chacha20poly1305 = "0.10"
 ed25519-dalek = "2"
+embassy-futures = "0.1"
+embassy-time = { version = "0.5", features = ["generic-queue-64"] }
 hkdf = "0.12"
 hmac = "0.12"
 http-body-util = "0.1"
@@ -33,22 +37,26 @@ hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 sha1 = "0.10"
 mdns-sd = "0.21"
 num-bigint = "0.4"
+rs-matter = { version = "=0.4.1", default-features = false, features = ["os", "rustcrypto", "log"] }
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 redb = "4"
+rand = { version = "0.10", default-features = false, features = ["std", "std_rng", "thread_rng"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 rpassword = "7"
 sha2 = "0.10"
 tower = { version = "0.5", features = ["util"] }
 clap = { version = "4", features = ["derive"] }
+futures-lite = "2"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+socket2 = "0.6"
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "macros", "net", "time", "sync", "signal"] }
 toml = "0.9"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi", "tracing-log"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

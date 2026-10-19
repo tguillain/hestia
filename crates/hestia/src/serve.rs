@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
-use hestia_api::{Auth, Dashboard, Setup};
+use hestia_api::{Auth, Dashboard, MatterSetup, Setup};
 use hestia_freebox::FreeboxConfig;
 use hestia_history::History;
 use hestia_homekit::HomeKit;
@@ -12,7 +12,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Notify, watch};
 use tracing::{debug, error, info, warn};
 
-use crate::config::{Config, DriverKind};
+use crate::config::{Config, DriverKind, DriverLinks};
 
 /// Open event streams would otherwise keep a graceful shutdown waiting forever.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
@@ -32,13 +32,22 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     };
     // "Rechercher des appareils" bumps this counter; drivers that can discover react to it.
     let (discovery, discovery_requests) = watch::channel(0_u64);
+    let (matter_pairing, matter_requests) = hestia_matter::pairing_channel();
+    let links = DriverLinks {
+        discovery: discovery_requests,
+        matter: matter_requests,
+    };
     for driver in &config.drivers {
-        spawn_driver(
-            &hub,
-            &driver.id,
-            driver.build(&config.data_dir, &discovery_requests)?,
-        );
+        spawn_driver(&hub, &driver.id, driver.build(&config.data_dir, &links)?);
     }
+    let matter = config
+        .drivers
+        .iter()
+        .find(|driver| driver.kind == DriverKind::Matter)
+        .map(|driver| MatterSetup {
+            instance: driver.id.clone(),
+            pairing: matter_pairing,
+        });
     tokio::spawn(log_events(Arc::clone(&hub)));
     // Apple Home is a bonus: a failure there must not take the dashboard down.
     let homekit = if config.homekit.enabled {
@@ -73,6 +82,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             update_repo: Some(config.update.github.clone()).filter(|repo| !repo.is_empty()),
             watch_updates: true,
             discovery: Some(discovery),
+            matter,
         },
     };
     let router = hestia_api::router(Arc::clone(&hub), auth, dashboard);

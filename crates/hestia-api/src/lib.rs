@@ -60,6 +60,15 @@ pub struct Setup {
     pub watch_updates: bool,
     /// Bumped to ask the drivers to look for new devices.
     pub discovery: Option<tokio::sync::watch::Sender<u64>>,
+    /// Pairing Matter devices, when a Matter driver is configured.
+    pub matter: Option<MatterSetup>,
+}
+
+/// The Matter driver as the Settings page sees it.
+pub struct MatterSetup {
+    /// Driver id, the prefix of its device ids.
+    pub instance: String,
+    pub pairing: hestia_matter::Pairing,
 }
 
 #[derive(Clone)]

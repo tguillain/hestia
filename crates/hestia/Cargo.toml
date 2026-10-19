@@ -13,6 +13,7 @@ hestia-govee.workspace = true
 hestia-api.workspace = true
 hestia-history.workspace = true
 hestia-homekit.workspace = true
+hestia-matter.workspace = true
 hestia-freebox.workspace = true
 hestia-minecraft.workspace = true
 hestia-ping.workspace = true

@@ -2,6 +2,7 @@ mod devices;
 mod discovery;
 mod events;
 mod history;
+mod matter;
 mod session;
 mod setup;
 mod update;
@@ -67,4 +68,7 @@ pub(crate) fn api() -> Router<AppState> {
             "/api/setup/govee/addresses/{address}",
             delete(discovery::remove_address),
         )
+        .route("/api/setup/matter", get(matter::list))
+        .route("/api/setup/matter/devices", post(matter::pair))
+        .route("/api/setup/matter/devices/{id}", delete(matter::remove))
 }

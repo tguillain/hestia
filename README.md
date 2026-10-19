@@ -12,6 +12,8 @@ boucle de contrôle.
 
 - **Lampes Govee** pilotées en local (API LAN) : allumage, luminosité, couleur, blanc. Découverte
   automatique, balayage du réseau et ajout par adresse IP.
+- **Lumières Matter** en Wi-Fi, pilotées en local sur le réseau Matter de Hestia : appairage
+  depuis Réglages avec le code de partage de l'app du fabricant.
 - **Apple Home** : pont HomeKit (HAP) natif, local, appairage par QR code.
 - **Freebox** : débits, IP externe, températures, ventilateurs, interrupteur Wi-Fi.
 - **Supervision** : serveurs Minecraft, présence des machines du réseau, santé du Raspberry Pi
@@ -59,6 +61,7 @@ signature). Le Pi la propose alors dans Réglages → Mise à jour et via l'outi
 | `hestia-homekit` | Pont Apple Home (HAP : SRP, Ed25519, ChaCha20-Poly1305, mDNS). |
 | `hestia-history` | Historique (redb) et graphiques. |
 | `hestia-govee`, `hestia-freebox`, `hestia-minecraft`, `hestia-ping`, `hestia-system` | Pilotes. |
+| `hestia-matter` | Pilote Matter : contrôleur sur [rs-matter](https://github.com/project-chip/rs-matter), découverte mDNS. |
 | `hestia` | Le programme : configuration, service, outils en ligne de commande. |
 
 ## Sécurité

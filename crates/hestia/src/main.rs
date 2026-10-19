@@ -64,11 +64,13 @@ enum Commands {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
+    let mut filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    // rs-matter reports every exchange at info level: only its problems, unless asked for.
+    if !std::env::var("RUST_LOG").is_ok_and(|directives| directives.contains("rs_matter")) {
+        filter = filter.add_directive("rs_matter=warn".parse()?);
+    }
+    // Also collects the `log` records of rs-matter.
+    tracing_subscriber::fmt().with_env_filter(filter).init();
     let cli = Cli::parse();
     match cli.command {
         Commands::Release(command) => release::run(command),

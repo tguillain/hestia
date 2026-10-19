@@ -1,0 +1,32 @@
+[package]
+name = "hestia-matter"
+description = "Matter lights over the local network: Hestia commissions them on its own fabric."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hestia-core.workspace = true
+hestia-hub.workspace = true
+anyhow.workspace = true
+async-io.workspace = true
+embassy-futures.workspace = true
+# rs-matter's timers need a queue when no embassy executor provides one.
+embassy-time.workspace = true
+futures-lite.workspace = true
+heapless = "0.9"
+mdns-sd.workspace = true
+rand.workspace = true
+rs-matter.workspace = true
+serde.workspace = true
+socket2.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true

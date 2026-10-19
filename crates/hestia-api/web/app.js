@@ -630,6 +630,7 @@ function renderSettings(user) {
     h('div', { class: 'content settings' },
       h('h2', { class: 'page-title' }, 'Réglages'),
       deviceSettings(),
+      matterSettings(),
       homekitSettings(),
       freeboxSettings(),
       tokenSettings(),
@@ -887,6 +888,75 @@ function deviceSettings() {
   load();
   return settingsCard('Appareils', 'Les appareils trouvés sur le réseau. Une recherche interroge toutes les adresses du réseau local.',
     h('div', { class: 'setting-body' }, list, search, progress, addForm, manual));
+}
+
+function matterSettings() {
+  const body = h('div', { class: 'setting-body' }, line('Chargement…', 'meta'));
+  const list = h('ul', { class: 'item-list' });
+  const progress = line('', 'pending-line');
+  const code = h('input', { name: 'code', placeholder: '3497-011-2332', inputmode: 'numeric', autocomplete: 'off', required: true });
+  const address = h('input', { name: 'address', placeholder: 'facultatif', inputmode: 'decimal', autocomplete: 'off' });
+  const submit = h('button', { class: 'primary inline', type: 'submit' }, 'Appairer');
+  const pairForm = h('form', { class: 'inline-form' },
+    h('label', { class: 'field-label' }, 'Code d’appairage Matter', code),
+    h('label', { class: 'field-label' }, 'Adresse IP', address),
+    submit,
+  );
+
+  const load = () => attempt(async () => {
+    const status = await api('GET', '/api/setup/matter');
+    if (!status.enabled) {
+      body.replaceChildren(line('Aucun pilote Matter dans la configuration : ajoute un [[driver]] de type « matter » dans hestia.toml.', 'meta'));
+      return;
+    }
+    list.replaceChildren(...(status.devices.length
+      ? status.devices.map((device) => {
+        const remove = h('button', { class: 'ghost danger' }, 'Retirer');
+        remove.addEventListener('click', async () => {
+          if (!confirm(`Retirer ${device.vendor} ${device.product} de Hestia ?`)) return;
+          remove.disabled = true;
+          if (await attempt(() => api('DELETE', `/api/setup/matter/devices/${encodeURIComponent(device.id)}`))) {
+            toast('Appareil retiré. Il disparaîtra du tableau de bord au prochain redémarrage.');
+            load();
+          }
+          remove.disabled = false;
+        });
+        return h('li', {},
+          h('span', { class: 'item-name' }, `${device.vendor} ${device.product}`.trim() || device.id),
+          h('span', { class: 'meta' }, device.address ?? device.id),
+          remove);
+      })
+      : [h('li', { class: 'meta' }, 'Aucun appareil Matter pour l’instant.')]));
+    body.replaceChildren(list,
+      h('h4', {}, 'Ajouter un appareil'),
+      h('ol', { class: 'meta' },
+        h('li', {}, 'Dans l’app du fabricant (Govee Home…), ouvre l’appareil puis Matter → partager / ajouter à un autre écosystème.'),
+        h('li', {}, 'Recopie le code à 11 chiffres affiché, dans les 15 minutes.'),
+        h('li', {}, 'Si l’appareil n’est pas trouvé, indique aussi son adresse IP (Freebox OS → Périphériques réseau).'),
+      ),
+      pairForm, progress);
+  });
+
+  pairForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    progress.className = 'pending-line';
+    progress.textContent = 'Appairage en cours, jusqu’à 2 minutes…';
+    try {
+      const paired = await api('POST', '/api/setup/matter/devices', { code: code.value, address: address.value });
+      progress.className = 'ok-line';
+      progress.textContent = `✓ ${paired.vendor} ${paired.product} ajouté.`;
+      pairForm.reset();
+      load();
+    } catch (error) {
+      progress.className = 'form-error';
+      progress.textContent = error.status === 401 ? '' : error.message;
+    }
+    submit.disabled = false;
+  });
+
+  load();
+  return settingsCard('Matter', 'Les appareils Matter, pilotés en local. Ils restent aussi utilisables dans l’app de leur fabricant.', body);
 }
 
 function updateSettings() {
