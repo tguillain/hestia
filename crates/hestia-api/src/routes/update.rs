@@ -15,11 +15,12 @@ use tracing::{info, warn};
 use super::CurrentUser;
 use crate::AppState;
 use crate::error::ApiError;
-use crate::release;
+use crate::{github, release};
 
 const CURRENT: &str = "hestia";
 const PREVIOUS: &str = "hestia.previous";
 const CANDIDATE: &str = "hestia.new";
+const DOWNLOAD: &str = "hestia.download";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Leaves the HTTP answer time to reach the browser before stopping.
 const RESTART_DELAY: Duration = Duration::from_millis(800);
@@ -63,12 +64,105 @@ pub(crate) async fn install(
         .ok_or_else(|| {
             ApiError::Invalid("signature manquante : joins le fichier hestia.sig".to_owned())
         })?;
-    let checked = program.clone();
-    let signed = tokio::task::spawn_blocking(move || release::verify(&checked, &signature))
+    let version = install_verified(&state, &user.name, program.to_vec(), signature).await?;
+    Ok(Json(json!({ "version": version })))
+}
+
+/// What GitHub offers compared with the running version.
+pub(crate) async fn latest_report(state: &AppState) -> Result<Json_, ApiError> {
+    let latest = github::latest(update_repo(state)?)
+        .await
+        .map_err(ApiError::BadGateway)?;
+    let current = &state.setup.config.version;
+    Ok(json!({
+        "current": current,
+        "latest": latest.version,
+        "published": latest.published,
+        "update_available": github::is_newer(&latest.version, current),
+    }))
+}
+
+/// Downloads the latest signed release from GitHub and installs it.
+pub(crate) async fn install_latest(state: &AppState, who: &str) -> Result<String, ApiError> {
+    let latest = github::latest(update_repo(state)?)
+        .await
+        .map_err(ApiError::BadGateway)?;
+    let current = &state.setup.config.version;
+    if !github::is_newer(&latest.version, current) {
+        return Err(ApiError::Invalid(format!(
+            "Hestia est déjà à jour (version {current})"
+        )));
+    }
+    let releases = releases(state);
+    tokio::fs::create_dir_all(&releases)
         .await
         .map_err(|_| ApiError::Internal)?;
+    let program_path = releases.join(DOWNLOAD);
+    let signature_path = releases.join(format!("{DOWNLOAD}.sig"));
+    let downloaded = async {
+        github::download(&latest.program_url, &program_path).await?;
+        github::download(&latest.signature_url, &signature_path).await?;
+        let program = tokio::fs::read(&program_path)
+            .await
+            .map_err(|error| error.to_string())?;
+        let signature = tokio::fs::read_to_string(&signature_path)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok::<_, String>((program, signature))
+    }
+    .await;
+    let _ = tokio::fs::remove_file(&program_path).await;
+    let _ = tokio::fs::remove_file(&signature_path).await;
+    let (program, signature) = downloaded.map_err(ApiError::BadGateway)?;
+    let signature = release::from_hex(signature.trim())
+        .ok_or_else(|| ApiError::Invalid("signature publiée illisible".to_owned()))?;
+    info!(
+        who,
+        version = latest.version,
+        "installing release from GitHub"
+    );
+    install_verified(state, who, program, signature).await
+}
+
+pub(crate) async fn latest(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+) -> Result<Json<Json_>, ApiError> {
+    latest_report(&state).await.map(Json)
+}
+
+pub(crate) async fn install_from_github(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Json<Json_>, ApiError> {
+    let version = install_latest(&state, &user.name).await?;
+    Ok(Json(json!({ "version": version })))
+}
+
+fn update_repo(state: &AppState) -> Result<&str, ApiError> {
+    state
+        .setup
+        .config
+        .update_repo
+        .as_deref()
+        .ok_or_else(|| ApiError::NotFound("aucun dépôt de mises à jour configuré".to_owned()))
+}
+
+/// Signature, machine and start-up checks, then the switch and the restart.
+async fn install_verified(
+    state: &AppState,
+    who: &str,
+    program: Vec<u8>,
+    signature: Vec<u8>,
+) -> Result<String, ApiError> {
+    let (program, signed) = tokio::task::spawn_blocking(move || {
+        let signed = release::verify(&program, &signature);
+        (program, signed)
+    })
+    .await
+    .map_err(|_| ApiError::Internal)?;
     if !signed {
-        warn!(user = user.name, "update refused: bad signature");
+        warn!(who, "update refused: bad signature");
         return Err(ApiError::Invalid(
             "fichier refusé : il n'est pas signé par ta clé de publication".to_owned(),
         ));
@@ -78,7 +172,7 @@ pub(crate) async fn install(
             "ce fichier n'est pas un programme pour cette machine".to_owned(),
         ));
     }
-    let releases = releases(&state);
+    let releases = releases(state);
     let candidate = releases.join(CANDIDATE);
     write_program(&candidate, &program).await.map_err(|error| {
         warn!(%error, "cannot write the new program");
@@ -102,9 +196,9 @@ pub(crate) async fn install(
     tokio::fs::rename(&candidate, &current)
         .await
         .map_err(|_| ApiError::Internal)?;
-    info!(user = user.name, version, "update installed, restarting");
-    restart_soon(&state);
-    Ok(Json(json!({ "version": version })))
+    info!(who, version, "update installed, restarting");
+    restart_soon(state);
+    Ok(version)
 }
 
 /// Swaps the current and previous releases; without a previous one, returns to the

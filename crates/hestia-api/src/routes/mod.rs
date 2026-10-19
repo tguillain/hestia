@@ -15,6 +15,7 @@ use crate::AppState;
 pub use history::{ChartConfig, SeriesSelector};
 pub(crate) use session::CurrentUser;
 pub(crate) use setup::SetupState;
+pub(crate) use update::{install_latest, latest_report};
 
 /// Upper bound for an uploaded program (today about 5 MB).
 const MAX_PROGRAM: usize = 64 * 1024 * 1024;
@@ -55,6 +56,10 @@ pub(crate) fn api() -> Router<AppState> {
                 .layer(DefaultBodyLimit::max(MAX_PROGRAM)),
         )
         .route("/api/setup/update/rollback", post(update::roll_back))
+        .route(
+            "/api/setup/update/latest",
+            get(update::latest).post(update::install_from_github),
+        )
         .route("/api/setup/discover", post(discovery::discover))
         .route("/api/setup/govee", get(discovery::govee))
         .route("/api/setup/govee/addresses", post(discovery::add_address))

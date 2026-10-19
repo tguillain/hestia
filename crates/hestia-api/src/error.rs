@@ -20,6 +20,11 @@ pub(crate) enum ApiError {
 }
 
 impl ApiError {
+    /// The human-readable explanation, for clients that are not HTTP (MCP tools).
+    pub(crate) fn message(&self) -> String {
+        self.parts().2
+    }
+
     fn parts(&self) -> (StatusCode, &'static str, String) {
         match self {
             Self::Unauthorized => (

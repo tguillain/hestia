@@ -889,6 +889,7 @@ function updateSettings() {
     if (!status.supported) {
       parts.push(line('La mise à jour depuis l’interface ne fonctionne que sur le Raspberry Pi.', 'meta'));
     } else {
+      parts.push(onlineUpdate());
       const files = h('input', { type: 'file', multiple: true, 'aria-label': 'Fichiers hestia et hestia.sig' });
       const install = h('button', { class: 'primary inline' }, 'Installer');
       const progress = line('', 'pending-line');
@@ -920,7 +921,7 @@ function updateSettings() {
         }
       });
       parts.push(
-        line('Choisis ensemble les fichiers hestia et hestia.sig préparés sur ton PC (dossier deploy).', 'meta'),
+        line('Ou installe à la main les fichiers hestia et hestia.sig préparés sur ton PC (dossier deploy).', 'meta'),
         files,
         install,
         progress,
@@ -937,7 +938,44 @@ function updateSettings() {
     body.replaceChildren(...parts);
   });
   load();
-  return settingsCard('Mise à jour', 'Installer une nouvelle version de Hestia, signée sur ton PC.', body);
+  return settingsCard('Mise à jour', 'Installer une nouvelle version de Hestia, signée avec ta clé de publication.', body);
+}
+
+// Asks GitHub for the latest published release, then offers to install it.
+function onlineUpdate() {
+  const check = h('button', { class: 'primary inline' }, 'Chercher une mise à jour');
+  const result = h('div', { class: 'setting-body' });
+  check.addEventListener('click', async () => {
+    check.disabled = true;
+    result.replaceChildren(line('Interrogation de GitHub…', 'pending-line'));
+    const ok = await attempt(async () => {
+      const report = await api('GET', '/api/setup/update/latest');
+      const published = report.published ? ` (publiée le ${new Date(report.published).toLocaleDateString('fr-FR')})` : '';
+      if (!report.update_available) {
+        result.replaceChildren(line(`Hestia est à jour. Dernière version publiée : ${report.latest}${published}.`, 'meta'));
+        return;
+      }
+      const install = h('button', { class: 'primary inline' }, `Installer la version ${report.latest}`);
+      const progress = line('', 'pending-line');
+      install.addEventListener('click', async () => {
+        install.disabled = true;
+        progress.textContent = 'Téléchargement et vérification de la signature…';
+        if (await attempt(async () => {
+          const done = await api('POST', '/api/setup/update/latest');
+          progress.textContent = `Version ${done.version} installée. Redémarrage…`;
+        })) {
+          await waitForRestart();
+        } else {
+          progress.textContent = '';
+          install.disabled = false;
+        }
+      });
+      result.replaceChildren(line(`Nouvelle version disponible : ${report.latest}${published}.`), install, progress);
+    });
+    if (!ok) result.replaceChildren();
+    check.disabled = false;
+  });
+  return h('div', { class: 'setting-body' }, check, result);
 }
 
 // The service stops after an update and systemd starts the new program: wait, then reload.

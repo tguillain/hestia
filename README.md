@@ -45,6 +45,10 @@ bash deploy/build.sh
 la clé dont la partie publique est dans `crates/hestia-api/release.pub`. Pour ton propre
 déploiement, crée ta clé avec `cargo run -p hestia -- release keygen` et remplace ce fichier.
 
+`deploy/release.sh "notes"` publie la version sur GitHub (release avec `hestia-aarch64` et sa
+signature). Le Pi la propose alors dans Réglages → Mise à jour et via l'outil MCP
+`install_update`. Le dépôt interrogé se règle dans la section `[update]` de `hestia.toml`.
+
 ## Organisation
 
 | Crate | Rôle |

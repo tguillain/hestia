@@ -12,6 +12,11 @@ public_url = "https://maison.example.fr"
 [history]
 retention_days = 10
 
+# Mises à jour : Réglages et l'outil MCP install_update proposent les versions signées
+# publiées sur ce dépôt GitHub. Mettre "" pour désactiver.
+[update]
+github = "tguillain/hestia"
+
 # Pont Apple Home : toutes les lampes sont exposées, sauf celles listées dans exclude.
 # Le code d'appairage s'affiche avec `hestia homekit status`.
 [homekit]

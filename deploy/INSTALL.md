@@ -165,12 +165,22 @@ Puis, depuis le PC : `scp <utilisateur>@hestia.local:~/hestia-sauvegarde-*.tgz .
 
 ## Mise à jour
 
-Depuis la page **Réglages → Mise à jour** du tableau de bord :
+Les versions sont publiées sur GitHub (section `[update]` de `hestia.toml`). Dans
+**Réglages → Mise à jour**, **Chercher une mise à jour** compare avec la dernière version
+publiée et propose **Installer la version …**. Une IA connectée en MCP avec un jeton
+« commande » peut faire la même chose (outils `check_update` et `install_update`).
 
-1. Sur le PC, la nouvelle version est préparée dans `deploy` : les fichiers `hestia` et `hestia.sig`.
-2. Dans Réglages → Mise à jour, choisis ces deux fichiers ensemble, puis **Installer**.
-3. Hestia vérifie la signature et que le programme démarre, l’installe puis redémarre en
-   quelques secondes. La page se recharge toute seule.
+Hestia télécharge le programme et sa signature, vérifie la signature et que le programme
+démarre, l’installe puis redémarre en quelques secondes. La page se recharge toute seule.
+
+Pour publier une version depuis le PC (après `git push`) :
+
+```bash
+bash deploy/release.sh "Ce qui change"
+```
+
+Sans GitHub, on peut aussi choisir ensemble les fichiers `deploy/hestia` et `deploy/hestia.sig`
+produits par `deploy/build.sh`, puis **Installer**.
 
 Seuls les fichiers signés avec la clé de publication du PC (`%USERPROFILE%\.hestia\release.key`)
 sont acceptés. Garde une copie de cette clé : sans elle, il faudra repasser par une

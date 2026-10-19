@@ -70,6 +70,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 .transpose()?,
             version: crate::VERSION.to_owned(),
             restart: Some(Arc::clone(&restart)),
+            update_repo: Some(config.update.github.clone()).filter(|repo| !repo.is_empty()),
             discovery: Some(discovery),
         },
     };

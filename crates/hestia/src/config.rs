@@ -30,6 +30,8 @@ pub struct Config {
     pub homekit: HomeKitConfig,
     #[serde(default)]
     pub history: HistoryConfig,
+    #[serde(default)]
+    pub update: UpdateConfig,
     /// Graphs shown on the dashboard.
     #[serde(default, rename = "chart")]
     pub charts: Vec<ChartConfig>,
@@ -56,6 +58,27 @@ impl Default for HttpConfig {
             public_url: None,
         }
     }
+}
+
+/// Where the Settings page and the MCP tools look for new versions.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateConfig {
+    /// GitHub `owner/repo` publishing signed releases; empty to disable.
+    #[serde(default = "default_update_repo")]
+    pub github: String,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            github: default_update_repo(),
+        }
+    }
+}
+
+fn default_update_repo() -> String {
+    "tguillain/hestia".to_owned()
 }
 
 fn default_data_dir() -> PathBuf {

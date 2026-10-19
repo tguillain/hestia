@@ -5,6 +5,7 @@ mod assets;
 mod auth;
 mod client;
 mod error;
+pub mod github;
 mod mcp;
 pub mod release;
 mod routes;
@@ -53,6 +54,8 @@ pub struct Setup {
     pub version: String,
     /// Asks the server to stop so systemd starts the newly installed program.
     pub restart: Option<Arc<tokio::sync::Notify>>,
+    /// `owner/repo` whose GitHub releases are offered as updates.
+    pub update_repo: Option<String>,
     /// Bumped to ask the drivers to look for new devices.
     pub discovery: Option<tokio::sync::watch::Sender<u64>>,
 }

@@ -45,8 +45,24 @@ pub(crate) fn definitions(scope: TokenScope) -> Vec<Json> {
             },
             "annotations": {"readOnlyHint": true, "openWorldHint": false},
         }),
+        json!({
+            "name": "check_update",
+            "title": "Chercher une mise à jour",
+            "description": "Compares the running Hestia version with the latest signed release published on GitHub.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "annotations": {"readOnlyHint": true, "openWorldHint": true},
+        }),
     ];
     if scope == TokenScope::Control {
+        tools.push(json!({
+            "name": "install_update",
+            "title": "Mettre Hestia à jour",
+            "description": "Downloads the latest release published on GitHub, checks its signature, installs it and \
+                            restarts Hestia (about 10 seconds without dashboard or Apple Home). Only when the user \
+                            asked for an update.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true},
+        }));
         tools.push(json!({
             "name": "set_point",
             "title": "Commander un appareil",
@@ -82,7 +98,21 @@ pub(crate) async fn call(
         "set_point" if token.scope == TokenScope::Control => {
             set_point(state, token, arguments).await
         }
-        "set_point" => Err("this token is read-only".to_owned()),
+        "set_point" | "install_update" if token.scope != TokenScope::Control => {
+            Err("this token is read-only".to_owned())
+        }
+        "check_update" => crate::routes::latest_report(state)
+            .await
+            .map_err(|error| error.message()),
+        "install_update" => {
+            info!(token = token.name, "MCP update requested");
+            crate::routes::install_latest(state, &format!("mcp:{}", token.name))
+                .await
+                .map(|version| {
+                    json!({"installed": version, "note": "Hestia redémarre, il répond de nouveau d'ici une dizaine de secondes."})
+                })
+                .map_err(|error| error.message())
+        }
         _ => return Err(RpcError::invalid_params(format!("unknown tool {name:?}"))),
     };
     Ok(match outcome {
