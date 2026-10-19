@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "hestia": {
+      "type": "http",
+      "url": "http://hestia.local:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer ${HESTIA_MCP_TOKEN}"
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+[package]
+name = "hestia-history"
+description = "Time series of numeric and binary states, kept a few days in an embedded redb file."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hestia-core.workspace = true
+hestia-hub.workspace = true
+anyhow.workspace = true
+redb.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

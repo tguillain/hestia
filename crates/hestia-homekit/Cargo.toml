@@ -1,0 +1,31 @@
+[package]
+name = "hestia-homekit"
+description = "HomeKit Accessory Protocol (IP) bridge exposing the hub's lights to Apple Home."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hestia-core.workspace = true
+hestia-hub.workspace = true
+anyhow.workspace = true
+chacha20poly1305.workspace = true
+ed25519-dalek.workspace = true
+hkdf.workspace = true
+mdns-sd.workspace = true
+num-bigint.workspace = true
+rand_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tracing.workspace = true
+x25519-dalek.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "signal"] }
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

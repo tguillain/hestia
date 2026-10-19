@@ -1,0 +1,15 @@
+# Build output
+target/
+
+# Secrets and personal data: never published
+.env
+inventory/
+data/
+/hestia.toml
+
+# Private deployment files (examples are published instead)
+deploy/hestia
+deploy/hestia.sig
+deploy/hestia.toml
+deploy/Caddyfile
+deploy/INSTALL.perso.md

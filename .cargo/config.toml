@@ -1,0 +1,10 @@
+# Cross-compilation for the Raspberry Pi (64-bit), fully static with musl.
+# The project is pure Rust, so the bundled rust-lld links it: no ARM toolchain needed.
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["-C", "linker-flavor=ld.lld", "-C", "link-self-contained=yes", "-C", "target-cpu=cortex-a72"]
+
+# Same, for testing the Linux code paths on an x86 Linux machine (WSL).
+[target.x86_64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["-C", "linker-flavor=ld.lld", "-C", "link-self-contained=yes"]

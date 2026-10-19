@@ -1,0 +1,100 @@
+# Exemple de configuration : copier en hestia.toml puis adapter.
+
+# Comptes, sessions et historique. Chemin relatif au dossier de ce fichier.
+data_dir = "data"
+
+[http]
+listen = "0.0.0.0:8080"
+# Adresse publique (derrière Caddy), utilisée dans les messages d'aide.
+public_url = "https://maison.example.fr"
+
+# Historique des valeurs numériques, pour les graphiques.
+[history]
+retention_days = 10
+
+# Pont Apple Home : toutes les lampes sont exposées, sauf celles listées dans exclude.
+# Le code d'appairage s'affiche avec `hestia homekit status`.
+[homekit]
+name = "Hestia"
+port = 51827
+# exclude = ["govee:a1b2c3d4e5f60718"]
+
+# Un bloc [[driver]] par pilote. L'id préfixe les identifiants des appareils (govee:xxxx).
+[[driver]]
+id = "govee"
+kind = "govee"
+
+# Réglages facultatifs du pilote Govee :
+# [driver.settings]
+# hosts = ["192.168.1.50"]   # lampes à interroger directement si le multicast ne passe pas
+# poll_interval_s = 5        # fréquence de lecture de l'état
+# scan_interval_s = 60       # fréquence de découverte
+
+# Serveur Minecraft : ping de statut, en lecture seule.
+[[driver]]
+id = "minecraft"
+kind = "minecraft"
+
+[driver.settings]
+servers = [{ host = "192.168.1.50", name = "Serveur Minecraft" }]
+
+# Présence des machines du réseau, par ping.
+[[driver]]
+id = "presence"
+kind = "ping"
+
+[driver.settings]
+hosts = [{ id = "pc", host = "192.168.1.50", name = "PC fixe" }]
+
+# Santé de la machine qui fait tourner hestia (Linux) : température, charge,
+# mémoire, disque et alerte de sous-tension du Raspberry Pi.
+[[driver]]
+id = "system"
+kind = "system"
+
+[driver.settings]
+name = "Raspberry Pi"
+
+# Freebox : à autoriser une fois avec `hestia freebox register`.
+[[driver]]
+id = "freebox"
+kind = "freebox"
+
+# Étiquettes affichées. L'identifiant reste stable même si le nom ou l'IP change.
+[[device]]
+id = "govee:a1b2c3d4e5f60718"
+name = "Bandeau TV"
+room = "Salon"
+
+[[device]]
+id = "govee:b2c3d4e5f6071829"
+name = "Chambre"
+room = "Chambre"
+
+[[device]]
+id = "govee:c3d4e5f60718293a"
+name = "Cuisine"
+room = "Cuisine"
+
+# Graphiques du tableau de bord. Une série désigne un point (`point`) ou tous les
+# points d'une nature (`semantic`, par exemple "temperature") d'un appareil.
+[[chart]]
+title = "Joueurs Minecraft (24 h)"
+hours = 24
+series = [{ device = "minecraft:192.168.1.50-25565", point = "players" }]
+
+[[chart]]
+title = "Débit internet (24 h)"
+hours = 24
+series = [
+  { device = "freebox:box", point = "download", label = "Descendant" },
+  { device = "freebox:box", point = "upload", label = "Montant" },
+]
+
+[[chart]]
+title = "Températures (7 j)"
+hours = 168
+series = [
+  { device = "freebox:box", semantic = "temperature" },
+  { device = "system:host", point = "cpu_temperature", label = "Raspberry Pi" },
+]

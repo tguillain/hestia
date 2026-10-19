@@ -1,0 +1,21 @@
+[package]
+name = "hestia-system"
+description = "Health of the machine running hestia (Raspberry Pi): temperature, load, memory, disk, power."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hestia-core.workspace = true
+hestia-hub.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,3 @@
+# Unix line endings everywhere: scripts, the service file and configs run on the Pi.
+* text=auto eol=lf
+*.png binary

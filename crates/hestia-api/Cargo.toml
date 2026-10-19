@@ -1,0 +1,32 @@
+[package]
+name = "hestia-api"
+description = "HTTP surface: REST API, live events (SSE), login and the embedded dashboard."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hestia-core.workspace = true
+hestia-hub.workspace = true
+hestia-history.workspace = true
+hestia-freebox.workspace = true
+hestia-govee.workspace = true
+hestia-homekit.workspace = true
+anyhow.workspace = true
+argon2.workspace = true
+ed25519-dalek.workspace = true
+axum.workspace = true
+futures-util.workspace = true
+qrcode.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["process", "fs"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+
+[lints]
+workspace = true

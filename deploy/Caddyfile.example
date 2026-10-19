@@ -1,0 +1,15 @@
+# HTTPS automatique (Let's Encrypt) pour les deux domaines. Les certificats sont obtenus
+# dès que la Freebox redirige les ports 80 et 443 vers ce Pi.
+
+maison.example.fr {
+	reverse_proxy 127.0.0.1:8080
+}
+
+jeu.example.fr {
+	reverse_proxy https://192.168.1.50:8443 {
+		transport http {
+			# Le dashboard Minecraft du PC a un certificat auto-signé (réseau local uniquement).
+			tls_insecure_skip_verify
+		}
+	}
+}

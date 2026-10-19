@@ -1,0 +1,6 @@
+#!/bin/sh
+# Starts the program installed from the Settings page when there is one,
+# otherwise the one installed by install.sh.
+program=/var/lib/hestia/releases/hestia
+[ -x "$program" ] || program=/usr/local/lib/hestia/hestia
+exec "$program" -c /etc/hestia/hestia.toml "$@"

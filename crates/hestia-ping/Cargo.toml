@@ -1,0 +1,18 @@
+[package]
+name = "hestia-ping"
+description = "Presence of hosts on the LAN, through the system ping command."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hestia-core.workspace = true
+hestia-hub.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["process"] }
+tracing.workspace = true
+
+[lints]
+workspace = true

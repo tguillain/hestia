@@ -1,0 +1,29 @@
+[Unit]
+Description=Hestia, hub domotique
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hestia
+Group=hestia
+ExecStart=/usr/local/lib/hestia/launch serve
+Restart=always
+RestartSec=2
+Environment=RUST_LOG=info
+
+# Le service ne peut écrire que dans son dossier de données.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hestia
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=yes
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
