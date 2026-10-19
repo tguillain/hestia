@@ -35,10 +35,17 @@ install -d -m 0755 /usr/local/lib/hestia
 install -m 0755 "$here/hestia" /usr/local/lib/hestia/hestia
 install -m 0755 "$here/launch" /usr/local/lib/hestia/launch
 /usr/local/lib/hestia/hestia --version
-# A manual install wins over a version installed from the Settings page,
-# which stays available as "previous" for rolling back.
-if [[ -f /var/lib/hestia/releases/hestia ]]; then
-  mv -f /var/lib/hestia/releases/hestia /var/lib/hestia/releases/hestia.previous
+# A version installed from the Settings page (or from GitHub) stays active when it is more
+# recent than this folder's; an older one is set aside as "previous" for rolling back.
+if [[ -x /var/lib/hestia/releases/hestia ]]; then
+  packaged="$(/usr/local/lib/hestia/hestia --version | sed 's/^hestia //')"
+  updated="$(/var/lib/hestia/releases/hestia --version 2>/dev/null | sed 's/^hestia //' || true)"
+  newest="$(printf '%s\n%s\n' "$packaged" "$updated" | sort -V | tail -n 1)"
+  if [[ -n "$updated" && "$updated" != "$packaged" && "$newest" == "$updated" ]]; then
+    echo "La version $updated installée depuis Réglages est plus récente : elle reste active."
+  else
+    mv -f /var/lib/hestia/releases/hestia /var/lib/hestia/releases/hestia.previous
+  fi
 fi
 
 echo "== Configuration"
