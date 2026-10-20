@@ -1,3 +1,4 @@
+mod automations;
 mod devices;
 mod discovery;
 mod events;
@@ -73,6 +74,12 @@ pub(crate) fn api() -> Router<AppState> {
             "/api/setup/govee/addresses/{address}",
             delete(discovery::remove_address),
         )
+        .route(
+            "/api/automations",
+            get(automations::get).put(automations::replace),
+        )
+        .route("/api/automations/scenes", post(automations::capture))
+        .route("/api/scenes/{id}/run", post(automations::run_scene))
         .route("/api/setup/matter", get(matter::list))
         .route("/api/setup/matter/devices", post(matter::pair))
         .route("/api/setup/matter/devices/{id}", delete(matter::remove))

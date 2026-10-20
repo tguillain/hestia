@@ -231,6 +231,17 @@ Pour couper Matter : `[matter]` puis `enabled = false` en haut de `hestia.toml`.
 Le réseau Matter de Hestia (ses clés) est dans `/var/lib/hestia/matter.json` : à sauvegarder avec
 le reste du dossier de données. Le perdre oblige à appairer de nouveau chaque appareil.
 
+## Présence et automatisations
+
+- **Présence** (Réglages → Présence) : choisis les téléphones à suivre parmi ceux que voit la
+  Freebox. Sur iPhone, mets « Adresse Wi-Fi privée » sur **Fixe** pour le Wi-Fi de la maison,
+  sinon le téléphone change d'adresse et n'est plus reconnu. Un téléphone absent du réseau depuis
+  plus de 10 minutes compte comme parti (`presence_grace_s` dans les réglages du pilote Freebox).
+- **Automatisations** (Réglages → Automatisations) : indique la position de la maison pour les
+  heures de lever et de coucher du soleil, enregistre des scènes depuis l'état des lampes, puis
+  ajoute des règles. Les scènes ont aussi un bouton sur le tableau de bord. Tout est gardé dans
+  `/var/lib/hestia/automations.json`.
+
 ## Dépannage
 
 - **L'appairage Matter échoue.** Rouvre le partage dans l'app du fabricant pour obtenir un code

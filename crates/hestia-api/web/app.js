@@ -18,6 +18,7 @@ const ICONS = {
   house: '<path d="M3 11 12 4l9 7v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19.5Z"/><circle cx="12" cy="14.5" r="2.5"/>',
   bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.3 1 2.2h5.2c0-.9.4-1.7 1-2.2A6 6 0 0 0 12 3Z"/>',
   power: '<path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+  play: '<path d="M8 5.5v13l10-6.5Z"/>',
   device: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
 };
@@ -542,9 +543,11 @@ function renderDashboard(user) {
       if (isLight(light) && light.available && value(light, 'on') === true) send(light, 'on', false);
     }
   });
+  const scenes = h('div', { class: 'scene-buttons' });
+  loadSceneButtons(scenes);
   const sections = [];
   sections.push(h('section', { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', {}, 'Lumières'), lights.length ? allOff : null),
+    h('div', { class: 'section-head wrap' }, h('h2', {}, 'Lumières'), scenes, lights.length ? allOff : null),
     lights.length
       ? h('div', { class: 'grid' }, lights.map((device) => card(device, lightCard)))
       : h('p', { class: 'empty' }, 'Aucune lampe pour l’instant. Elles apparaissent dès qu’elles répondent sur le réseau.'),
@@ -567,6 +570,25 @@ function renderDashboard(user) {
     h('div', { class: 'content' }, sections),
   );
   refreshChartsEveryMinute();
+}
+
+// One button per scene, next to « Tout éteindre ».
+async function loadSceneButtons(container) {
+  let status;
+  try {
+    status = await api('GET', '/api/automations');
+  } catch {
+    return;
+  }
+  container.replaceChildren(...status.document.scenes.map((scene) => {
+    const run = h('button', { class: 'pill' }, icon('play'), scene.name);
+    run.addEventListener('click', async () => {
+      run.disabled = true;
+      if (await attempt(() => api('POST', `/api/scenes/${encodeURIComponent(scene.id)}/run`))) toast(`Scène « ${scene.name} » lancée.`);
+      run.disabled = false;
+    });
+    return run;
+  }));
 }
 
 // ---- Settings ----------------------------------------------------------------------------
@@ -635,6 +657,7 @@ function renderSettings(user) {
       homekitSettings(),
       freeboxSettings(),
       presenceSettings(),
+      automationSettings(),
       tokenSettings(),
       accountSettings(user),
       updateSettings(),
@@ -712,6 +735,236 @@ function freeboxSettings() {
   });
   load();
   return settingsCard('Freebox', 'Débits, températures et Wi-Fi de la box.', body);
+}
+
+const DAY_LABELS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+function describeDays(days) {
+  if (!days?.length || days.length === 7) return 'tous les jours';
+  const sorted = [...days].sort();
+  if (sorted.join() === '1,2,3,4,5') return 'en semaine';
+  if (sorted.join() === '6,7') return 'le week-end';
+  return sorted.map((day) => DAY_LABELS[day - 1]).join(', ');
+}
+
+function deviceName(id) {
+  return devices.get(id)?.name ?? id;
+}
+
+function describeTrigger(trigger) {
+  switch (trigger.type) {
+    case 'time': return `À ${trigger.at}, ${describeDays(trigger.days)}`;
+    case 'sun': {
+      const event = trigger.event === 'sunrise' ? 'lever du soleil' : 'coucher du soleil';
+      const offset = trigger.offset_min ? ` ${trigger.offset_min > 0 ? '+' : '−'}${Math.abs(trigger.offset_min)} min` : '';
+      return `Au ${event}${offset}, ${describeDays(trigger.days)}`;
+    }
+    case 'presence': return trigger.event === 'first_arrival' ? 'Quand quelqu’un arrive (maison vide)' : 'Quand le dernier part';
+    case 'state': return `Quand ${deviceName(trigger.device)} : ${formatValue({ ...point(devices.get(trigger.device) ?? { points: [] }, trigger.point), value: trigger.value })}`;
+    default: return trigger.type;
+  }
+}
+
+function describeAction(action, document) {
+  switch (action.type) {
+    case 'scene': return `lancer « ${document.scenes.find((scene) => scene.id === action.scene)?.name ?? '?'} »`;
+    case 'lights_off': return 'éteindre toutes les lumières';
+    case 'set': return `${action.value ? 'allumer' : 'éteindre'} ${deviceName(action.device)}`;
+    default: return action.type;
+  }
+}
+
+function automationSettings() {
+  const body = h('div', { class: 'setting-body' }, line('Chargement…', 'meta'));
+  let document = null;
+
+  const save = async (next) => {
+    try {
+      document = await api('PUT', '/api/automations', next);
+      return true;
+    } catch (error) {
+      if (error.status !== 401) toast(error.message);
+      return false;
+    }
+  };
+
+  const load = () => attempt(async () => {
+    const status = await api('GET', '/api/automations');
+    document = status.document;
+    body.replaceChildren(locationPart(status.sun), scenesPart(), rulesPart());
+  });
+
+  const locationPart = (sun) => {
+    const latitude = h('input', { name: 'latitude', inputmode: 'decimal', placeholder: '48.85', value: document.location?.latitude ?? '' });
+    const longitude = h('input', { name: 'longitude', inputmode: 'decimal', placeholder: '2.35', value: document.location?.longitude ?? '' });
+    const here = h('button', { class: 'pill', type: 'button' }, 'Ma position');
+    here.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        toast('Position indisponible sur ce navigateur.');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          latitude.value = position.coords.latitude.toFixed(4);
+          longitude.value = position.coords.longitude.toFixed(4);
+        },
+        () => toast('Position refusée ou indisponible (elle demande une connexion https).'),
+      );
+    });
+    const form = h('form', { class: 'inline-form' },
+      h('label', { class: 'field-label' }, 'Latitude', latitude),
+      h('label', { class: 'field-label' }, 'Longitude', longitude),
+      here,
+      h('button', { class: 'primary inline', type: 'submit' }, 'Enregistrer'),
+    );
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const location = latitude.value && longitude.value
+        ? { latitude: Number(latitude.value.replace(',', '.')), longitude: Number(longitude.value.replace(',', '.')) }
+        : null;
+      if (await save({ ...document, location })) load();
+    });
+    return h('div', {},
+      h('h4', {}, 'Position de la maison'),
+      line(sun ? `Aujourd’hui : lever ${sun.sunrise}, coucher ${sun.sunset}.` : 'Nécessaire pour les règles au lever et au coucher du soleil.', 'meta'),
+      form);
+  };
+
+  const scenesPart = () => {
+    const list = h('ul', { class: 'item-list' }, ...(document.scenes.length
+      ? document.scenes.map((scene) => {
+        const run = h('button', { class: 'pill' }, 'Lancer');
+        run.addEventListener('click', () => attempt(() => api('POST', `/api/scenes/${encodeURIComponent(scene.id)}/run`)));
+        const remove = h('button', { class: 'ghost danger' }, 'Supprimer');
+        remove.addEventListener('click', async () => {
+          if (!confirm(`Supprimer la scène « ${scene.name} » ?`)) return;
+          if (await save({ ...document, scenes: document.scenes.filter((other) => other.id !== scene.id) })) load();
+        });
+        const lamps = [...new Set(scene.actions.map((action) => deviceName(action.device)))].join(', ');
+        return h('li', {}, h('span', { class: 'item-name' }, scene.name), h('span', { class: 'meta' }, lamps), run, remove);
+      })
+      : [h('li', { class: 'meta' }, 'Aucune scène pour l’instant.')]));
+    const lamps = [...devices.values()].filter(isLight).sort(byRoomThenName);
+    const name = h('input', { name: 'name', placeholder: 'Soirée', required: true });
+    const choices = lamps.map((lamp) => ({ lamp, box: h('input', { type: 'checkbox', checked: value(lamp, 'on') === true }) }));
+    const form = h('form', { class: 'inline-form' },
+      h('label', { class: 'field-label' }, 'Nom de la scène', name),
+      h('div', { class: 'days' }, ...choices.map(({ lamp, box }) => h('label', { class: 'check' }, box, lamp.name))),
+      h('button', { class: 'primary inline', type: 'submit' }, 'Enregistrer l’état actuel'),
+    );
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const chosen = choices.filter(({ box }) => box.checked).map(({ lamp }) => lamp.id);
+      if (await attempt(() => api('POST', '/api/automations/scenes', { name: name.value, devices: chosen }))) {
+        toast('Scène enregistrée.');
+        load();
+      }
+    });
+    return h('div', {},
+      h('h4', {}, 'Scènes'),
+      list,
+      line('Règle les lampes comme tu le veux, coche-les, puis enregistre : la scène retiendra leur allumage, leur luminosité et leur couleur.', 'meta'),
+      lamps.length ? form : line('Aucune lampe disponible.', 'meta'));
+  };
+
+  const rulesPart = () => {
+    const list = h('ul', { class: 'item-list' }, ...(document.rules.length
+      ? document.rules.map((rule) => {
+        const toggle = h('input', { type: 'checkbox', checked: rule.enabled });
+        toggle.addEventListener('change', async () => {
+          const rules = document.rules.map((other) => (other.id === rule.id ? { ...other, enabled: toggle.checked } : other));
+          if (!(await save({ ...document, rules }))) toggle.checked = !toggle.checked;
+        });
+        const remove = h('button', { class: 'ghost danger' }, 'Supprimer');
+        remove.addEventListener('click', async () => {
+          if (!confirm(`Supprimer la règle « ${rule.name} » ?`)) return;
+          if (await save({ ...document, rules: document.rules.filter((other) => other.id !== rule.id) })) load();
+        });
+        return h('li', {},
+          h('label', { class: 'check' }, toggle, h('span', { class: 'item-name' }, rule.name)),
+          h('span', { class: 'meta' }, `${describeTrigger(rule.trigger)} → ${describeAction(rule.action, document)}`),
+          remove);
+      })
+      : [h('li', { class: 'meta' }, 'Aucune règle pour l’instant.')]));
+    return h('div', {}, h('h4', {}, 'Règles'), list, h('h4', {}, 'Nouvelle règle'), ruleForm());
+  };
+
+  const ruleForm = () => {
+    const name = h('input', { name: 'name', placeholder: 'Lumières du soir', required: true });
+    const kind = h('select', { name: 'trigger' },
+      h('option', { value: 'time' }, 'À une heure précise'),
+      h('option', { value: 'sunset' }, 'Au coucher du soleil'),
+      h('option', { value: 'sunrise' }, 'Au lever du soleil'),
+      h('option', { value: 'first_arrival' }, 'Quand quelqu’un arrive'),
+      h('option', { value: 'last_departure' }, 'Quand le dernier part'),
+      h('option', { value: 'state' }, 'Quand un appareil change'),
+    );
+    const at = h('input', { type: 'time', name: 'at', value: '07:00' });
+    const offset = h('input', { type: 'number', name: 'offset', value: '0', step: '5', min: '-360', max: '360' });
+    const days = DAY_LABELS.map((label, index) => ({ day: index + 1, box: h('input', { type: 'checkbox', checked: true }), label }));
+    const watched = [...devices.values()].sort(byRoomThenName).flatMap((device) => device.points
+      .filter((candidate) => candidate.kind.type === 'binary')
+      .map((candidate) => ({ device, spec: candidate })));
+    const stateChoice = h('select', { name: 'state' }, ...watched.flatMap(({ device, spec }, index) => [true, false].map((wanted) => h('option', { value: `${index}:${wanted}` },
+      `${device.name} · ${spec.label} : ${formatValue({ ...spec, value: wanted })}`))));
+    const actions = [
+      ...document.scenes.map((scene) => ({ label: `Lancer « ${scene.name} »`, action: { type: 'scene', scene: scene.id } })),
+      { label: 'Éteindre toutes les lumières', action: { type: 'lights_off' } },
+      ...[...devices.values()].filter((device) => device.points.some((candidate) => candidate.semantic === 'on_off' && candidate.access === 'read_write'))
+        .sort(byRoomThenName)
+        .flatMap((device) => {
+          const key = device.points.find((candidate) => candidate.semantic === 'on_off').key;
+          return [true, false].map((on) => ({ label: `${on ? 'Allumer' : 'Éteindre'} ${device.name}`, action: { type: 'set', device: device.id, point: key, value: on } }));
+        }),
+    ];
+    const action = h('select', { name: 'action' }, ...actions.map((choice, index) => h('option', { value: String(index) }, choice.label)));
+    const timeField = h('label', { class: 'field-label' }, 'Heure', at);
+    const offsetField = h('label', { class: 'field-label' }, 'Décalage (minutes, négatif = avant)', offset);
+    const daysField = h('div', { class: 'days' }, ...days.map(({ box, label }) => h('label', { class: 'check' }, box, label)));
+    const stateField = h('label', { class: 'field-label' }, 'Appareil', stateChoice);
+    const refresh = () => {
+      const value_ = kind.value;
+      timeField.hidden = value_ !== 'time';
+      offsetField.hidden = value_ !== 'sunset' && value_ !== 'sunrise';
+      daysField.hidden = !['time', 'sunset', 'sunrise'].includes(value_);
+      stateField.hidden = value_ !== 'state';
+    };
+    kind.addEventListener('change', refresh);
+    refresh();
+    const form = h('form', { class: 'inline-form' },
+      h('label', { class: 'field-label' }, 'Nom', name),
+      h('label', { class: 'field-label' }, 'Quand', kind),
+      timeField, offsetField, daysField, stateField,
+      h('label', { class: 'field-label' }, 'Alors', action),
+      h('button', { class: 'primary inline', type: 'submit' }, 'Ajouter la règle'),
+    );
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const chosenDays = days.filter(({ box }) => box.checked).map(({ day }) => day);
+      let trigger;
+      switch (kind.value) {
+        case 'time': trigger = { type: 'time', at: at.value, days: chosenDays }; break;
+        case 'sunset':
+        case 'sunrise': trigger = { type: 'sun', event: kind.value, offset_min: Number(offset.value) || 0, days: chosenDays }; break;
+        case 'state': {
+          const [index, wanted] = stateChoice.value.split(':');
+          const { device, spec } = watched[Number(index)];
+          trigger = { type: 'state', device: device.id, point: spec.key, value: wanted === 'true' };
+          break;
+        }
+        default: trigger = { type: 'presence', event: kind.value };
+      }
+      const rule = { id: '', name: name.value, enabled: true, trigger, action: actions[Number(action.value)].action };
+      if (await save({ ...document, rules: [...document.rules, rule] })) {
+        toast('Règle ajoutée.');
+        load();
+      }
+    });
+    return form;
+  };
+
+  load();
+  return settingsCard('Automatisations', 'Des scènes à lancer d’un geste, et des règles « quand… alors… » qui s’exécutent toutes seules.', body);
 }
 
 function presenceSettings() {

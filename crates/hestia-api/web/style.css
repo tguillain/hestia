@@ -109,6 +109,11 @@ svg.icon { width: 20px; height: 20px; flex: none; }
 .section { margin-top: 20px; }
 
 .section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.section-head.wrap { flex-wrap: wrap; }
+.scene-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.scene-buttons:empty { display: none; }
+.days { display: flex; flex-wrap: wrap; gap: 4px 12px; flex-basis: 100%; }
+.inline-form [hidden] { display: none; }
 
 .section-head h2 { margin: 0; font-size: 17px; font-weight: 650; flex: 1; }
 
@@ -332,7 +337,8 @@ select { border: 1px solid var(--border); border-radius: 8px; background: var(--
 
 .field-label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); flex: 1 1 180px; }
 
-.inline-form input:not([type="checkbox"]) {
+.inline-form input:not([type="checkbox"]),
+.inline-form select {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 9px 12px;

@@ -49,6 +49,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             pairing: matter_pairing,
         });
     tokio::spawn(log_events(Arc::clone(&hub)));
+    let automations = hestia_automation::Automations::open(Arc::clone(&hub), &config.data_dir)?;
+    automations.spawn();
     // Apple Home is a bonus: a failure there must not take the dashboard down.
     let homekit = if config.homekit.enabled {
         match HomeKit::start(Arc::clone(&hub), &config.homekit, &config.data_dir).await {
@@ -83,6 +85,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             watch_updates: true,
             discovery: Some(discovery),
             matter,
+            automations: Some(automations),
         },
     };
     let router = hestia_api::router(Arc::clone(&hub), auth, dashboard);

@@ -20,6 +20,7 @@ hestia-system = { path = "crates/hestia-system" }
 hestia-freebox = { path = "crates/hestia-freebox" }
 hestia-history = { path = "crates/hestia-history" }
 hestia-matter = { path = "crates/hestia-matter" }
+hestia-automation = { path = "crates/hestia-automation" }
 
 anyhow = "1"
 async-io = "2"
@@ -31,6 +32,7 @@ embassy-futures = "0.1"
 embassy-time = { version = "0.5", features = ["generic-queue-64"] }
 hkdf = "0.12"
 hmac = "0.12"
+jiff = "0.2"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }

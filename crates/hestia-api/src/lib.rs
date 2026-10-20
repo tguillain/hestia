@@ -62,6 +62,8 @@ pub struct Setup {
     pub discovery: Option<tokio::sync::watch::Sender<u64>>,
     /// Pairing Matter devices, when a Matter driver is configured.
     pub matter: Option<MatterSetup>,
+    /// Scenes and rules.
+    pub automations: Option<Arc<hestia_automation::Automations>>,
 }
 
 /// The Matter driver as the Settings page sees it.
