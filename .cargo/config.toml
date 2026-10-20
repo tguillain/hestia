@@ -2,7 +2,12 @@
 # The project is pure Rust, so the bundled rust-lld links it: no ARM toolchain needed.
 [target.aarch64-unknown-linux-musl]
 linker = "rust-lld"
-rustflags = ["-C", "linker-flavor=ld.lld", "-C", "link-self-contained=yes", "-C", "target-cpu=cortex-a72"]
+# The Pi 4's Cortex-A72 has no crypto extensions, although LLVM's cortex-a72 assumes them:
+# without -aes,-sha2 the AES and SHA code (Matter) dies with SIGILL.
+rustflags = [
+    "-C", "linker-flavor=ld.lld", "-C", "link-self-contained=yes",
+    "-C", "target-cpu=cortex-a72", "-C", "target-feature=-aes,-sha2",
+]
 
 # Same, for testing the Linux code paths on an x86 Linux machine (WSL).
 [target.x86_64-unknown-linux-musl]
