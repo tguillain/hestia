@@ -25,6 +25,41 @@ fi
 
 deploy/build.sh
 
+# Le programme est essayé sur le Pi avant d'être publié : une version qui n'y démarre pas
+# (instructions que le processeur n'a pas, par exemple) n'arrive jamais dans Réglages.
+# HESTIA_SMOKE_HOST choisit le Pi, HESTIA_SMOKE=0 saute le test.
+smoke_host="${HESTIA_SMOKE_HOST:-xakonekt@hestia.local}"
+if [[ "${HESTIA_SMOKE:-1}" == 0 ]]; then
+  echo "Test sur le Pi sauté (HESTIA_SMOKE=0)."
+elif ssh -o BatchMode=yes -o ConnectTimeout=5 "$smoke_host" true 2>/dev/null; then
+  echo "Test de démarrage sur $smoke_host…"
+  remote="$(ssh -o BatchMode=yes "$smoke_host" 'mktemp -d /tmp/hestia-smoke.XXXXXX')"
+  scp -q -o BatchMode=yes deploy/hestia "$smoke_host:$remote/hestia"
+  if ! ssh -o BatchMode=yes "$smoke_host" bash -s "$remote" <<'SMOKE'
+set -u
+cd "$1"
+printf 'data_dir = "data"\n[http]\nlisten = "127.0.0.1:0"\n[homekit]\nenabled = false\n[update]\ngithub = ""\n' > test.toml
+chmod +x hestia
+timeout 15 ./hestia -c test.toml serve > run.log 2>&1
+status=$?
+ok=true
+# 124: still running when the 15 s were up, which is what a healthy start looks like.
+[[ $status == 124 ]] || { echo "Le programme s'est arrêté (code $status)."; ok=false; }
+grep -q 'hestia started' run.log || { echo "Le serveur n'a pas démarré."; ok=false; }
+grep -q 'Matter controller ready' run.log || { echo "Le pilote Matter n'a pas démarré."; ok=false; }
+$ok || tail -n 20 run.log
+cd /tmp && [[ "$1" == /tmp/hestia-smoke.* ]] && rm -r -- "$1"
+$ok
+SMOKE
+  then
+    echo "Publication annulée : la version ne démarre pas sur le Pi." >&2
+    exit 1
+  fi
+  echo "La version démarre sur le Pi."
+else
+  echo "Attention : $smoke_host injoignable en SSH sans mot de passe, version publiée sans test sur le Pi." >&2
+fi
+
 host=target/release/hestia
 [[ -x "$host.exe" ]] && host="$host.exe"
 version="$("$host" --version | tr -d '\r' | sed 's/^hestia //')"

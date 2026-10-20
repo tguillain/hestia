@@ -174,11 +174,20 @@ publiée et propose **Installer la version …**. Une IA connectée en MCP avec 
 Hestia télécharge le programme et sa signature, vérifie la signature et que le programme
 démarre, l’installe puis redémarre en quelques secondes. La page se recharge toute seule.
 
+Une version fraîchement installée reste « à l’essai » pendant sa première minute. Si le
+service s’arrête trois fois de suite avant, la version précédente revient toute seule et
+**Réglages → Mise à jour** le signale. Le tableau de bord n’est coupé qu’une dizaine de
+secondes au lieu de rester hors service.
+
 Pour publier une version depuis le PC (après `git push`) :
 
 ```bash
 bash deploy/release.sh "Ce qui change"
 ```
+
+Avant de publier, le script essaie le programme 15 secondes sur le Pi (SSH par clé vers
+`xakonekt@hestia.local`, ou `HESTIA_SMOKE_HOST`) et annule la publication s’il ne démarre
+pas. Sans accès SSH, il prévient et publie quand même ; `HESTIA_SMOKE=0` saute le test.
 
 Sans GitHub, on peut aussi choisir ensemble les fichiers `deploy/hestia` et `deploy/hestia.sig`
 produits par `deploy/build.sh`, puis **Installer**.

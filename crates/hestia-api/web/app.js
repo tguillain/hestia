@@ -1284,6 +1284,10 @@ function updateSettings() {
   const load = () => attempt(async () => {
     const status = await api('GET', '/api/setup/update');
     const parts = [line(`Version en service : ${status.version}${status.from_update ? ' (installée depuis cette page)' : ''}`)];
+    if (status.rolled_back) {
+      const when = new Date(status.rolled_back.at * 1000).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+      parts.push(line(`⚠ Le ${when}, la version ${status.rolled_back.version || 'installée'} ne démarrait pas : Hestia est revenu tout seul à la version précédente.`, 'form-error'));
+    }
     if (!status.supported) {
       parts.push(line('La mise à jour depuis l’interface ne fonctionne que sur le Raspberry Pi.', 'meta'));
     } else {

@@ -30,7 +30,7 @@ use tokio::sync::Semaphore;
 pub use auth::{
     Auth, McpTokens, TokenInfo, TokenScope, UserStore, hash_password, hash_password_with,
 };
-pub use routes::{ChartConfig, SeriesSelector};
+pub use routes::{ChartConfig, HEALTHY_AFTER, SeriesSelector, confirm_release};
 
 const BODY_LIMIT: usize = 16 * 1024;
 const MAX_EVENT_STREAMS: usize = 32;

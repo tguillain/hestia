@@ -22,6 +22,13 @@ const CURRENT: &str = "hestia";
 const PREVIOUS: &str = "hestia.previous";
 const CANDIDATE: &str = "hestia.new";
 const DOWNLOAD: &str = "hestia.download";
+/// Present while a fresh release has not proved it starts: `launch` counts its starts
+/// and brings the previous release back after a few failures.
+const TRIAL: &str = "trial";
+/// Written by `launch` after such a rollback: `<unix seconds> <version>`.
+const ROLLED_BACK: &str = "rolled-back";
+/// Running this long counts as a good start.
+pub const HEALTHY_AFTER: Duration = Duration::from_secs(60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Leaves the HTTP answer time to reach the browser before stopping.
 const RESTART_DELAY: Duration = Duration::from_millis(800);
@@ -47,12 +54,30 @@ pub(crate) async fn status(State(state): State<AppState>, _user: CurrentUser) ->
         .ok()
         .and_then(|program| std::fs::canonicalize(program).ok())
         .is_some_and(|program| program.starts_with(&resolved));
+    let rolled_back = std::fs::read_to_string(releases.join(ROLLED_BACK))
+        .ok()
+        .and_then(|record| {
+            let (at, version) = record.trim().split_once(' ').unwrap_or((record.trim(), ""));
+            Some(json!({ "at": at.parse::<i64>().ok()?, "version": version }))
+        });
     Json(json!({
         "version": state.setup.config.version,
         "from_update": from_update,
         "can_roll_back": releases.join(PREVIOUS).exists() || releases.join(CURRENT).exists(),
         "supported": cfg!(target_os = "linux"),
+        "rolled_back": rolled_back,
     }))
+}
+
+/// The running release has been up for [`HEALTHY_AFTER`]: it is no longer on trial.
+pub fn confirm_release(data_dir: &Path) {
+    let trial = data_dir.join("releases").join(TRIAL);
+    if trial.exists() {
+        match std::fs::remove_file(&trial) {
+            Ok(()) => info!("new release confirmed"),
+            Err(error) => warn!(%error, "cannot confirm the new release"),
+        }
+    }
 }
 
 pub(crate) async fn install(
@@ -230,6 +255,10 @@ async fn install_verified(
     tokio::fs::rename(&candidate, &current)
         .await
         .map_err(|_| ApiError::Internal)?;
+    if let Err(error) = tokio::fs::write(releases.join(TRIAL), "0\n").await {
+        warn!(%error, "cannot put the new release on trial");
+    }
+    let _ = tokio::fs::remove_file(releases.join(ROLLED_BACK)).await;
     info!(who, version, "update installed, restarting");
     restart_soon(state);
     Ok(version)
@@ -267,6 +296,8 @@ pub(crate) async fn roll_back(
     if !swapped {
         return Err(ApiError::Invalid("aucune version précédente".to_owned()));
     }
+    // The previous release already proved itself.
+    let _ = tokio::fs::remove_file(releases.join(TRIAL)).await;
     info!(user = user.name, "rolled back, restarting");
     restart_soon(&state);
     Ok(Json(json!({ "restarting": true })))

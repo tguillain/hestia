@@ -1,6 +1,31 @@
 #!/bin/sh
 # Starts the program installed from the Settings page when there is one,
 # otherwise the one installed by install.sh.
-program=/var/lib/hestia/releases/hestia
-[ -x "$program" ] || program=/usr/local/lib/hestia/hestia
-exec "$program" -c /etc/hestia/hestia.toml "$@"
+#
+# A release just installed is on trial (releases/trial) until it has run for a minute.
+# If the service keeps dying before that, the previous release comes back on its own:
+# a broken update never leaves the house without its dashboard.
+releases=${HESTIA_RELEASES:-/var/lib/hestia/releases}
+program=$releases/hestia
+trial=$releases/trial
+max_starts=3
+
+if [ "$1" = serve ] && [ -x "$program" ] && [ -f "$trial" ]; then
+  starts=$(( $(cat "$trial" 2>/dev/null || echo 0) + 1 ))
+  if [ "$starts" -gt "$max_starts" ]; then
+    failed=$(timeout 5 "$program" --version 2>/dev/null)
+    failed=${failed#hestia }
+    mv -f "$program" "$releases/hestia.failed"
+    if [ -x "$releases/hestia.previous" ]; then
+      mv -f "$releases/hestia.previous" "$program"
+    fi
+    rm -f "$trial"
+    printf '%s %s\n' "$(date +%s)" "$failed" > "$releases/rolled-back"
+    echo "hestia: la version ${failed:-installée} ne démarre pas, retour à la version précédente" >&2
+  else
+    echo "$starts" > "$trial"
+  fi
+fi
+
+[ -x "$program" ] || program=${HESTIA_INSTALLED:-/usr/local/lib/hestia/hestia}
+exec "$program" -c "${HESTIA_CONFIG:-/etc/hestia/hestia.toml}" "$@"

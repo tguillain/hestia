@@ -92,6 +92,12 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let mut server = tokio::spawn(hestia_api::serve(listener, router, async move {
         let _ = stopped.wait_for(|stop| *stop).await;
     }));
+    // Still up a minute later: a release on trial is kept (see deploy/launch).
+    let data_dir = config.data_dir.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(hestia_api::HEALTHY_AFTER).await;
+        hestia_api::confirm_release(&data_dir);
+    });
 
     // A clean exit after an update: systemd starts the new program right away.
     tokio::select! {
