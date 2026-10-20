@@ -890,6 +890,21 @@ function deviceSettings() {
     h('div', { class: 'setting-body' }, list, search, progress, addForm, manual));
 }
 
+// Groups the digits as apps print them: 3497-011-2332, or 4-3-4-5-5 for the 21-digit codes.
+// A pasted QR text (MT:…) is left as it is.
+function formatMatterCode(raw) {
+  if (/[a-z]/i.test(raw)) return raw;
+  const digits = raw.replace(/\D/g, '').slice(0, 21);
+  const groups = [];
+  let start = 0;
+  for (const size of [4, 3, 4, 5, 5]) {
+    if (start >= digits.length) break;
+    groups.push(digits.slice(start, start + size));
+    start += size;
+  }
+  return groups.join('-');
+}
+
 function matterSettings() {
   const body = h('div', { class: 'setting-body' }, line('Chargement…', 'meta'));
   const list = h('ul', { class: 'item-list' });
@@ -902,6 +917,7 @@ function matterSettings() {
     h('label', { class: 'field-label' }, 'Adresse IP', address),
     submit,
   );
+  code.addEventListener('input', () => { code.value = formatMatterCode(code.value); });
 
   const load = () => attempt(async () => {
     const status = await api('GET', '/api/setup/matter');
