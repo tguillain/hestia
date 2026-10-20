@@ -33,6 +33,8 @@ pub struct Config {
     pub history: HistoryConfig,
     #[serde(default)]
     pub update: UpdateConfig,
+    #[serde(default)]
+    pub matter: MatterSection,
     /// Graphs shown on the dashboard.
     #[serde(default, rename = "chart")]
     pub charts: Vec<ChartConfig>,
@@ -78,9 +80,30 @@ impl Default for UpdateConfig {
     }
 }
 
+/// Matter needs no configuration: without a `matter` driver block, one is added, so an
+/// update from the Settings page is enough to get it.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MatterSection {
+    #[serde(default = "enabled")]
+    pub enabled: bool,
+}
+
+impl Default for MatterSection {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+fn enabled() -> bool {
+    true
+}
+
 fn default_update_repo() -> String {
     "tguillain/hestia".to_owned()
 }
+
+const DEFAULT_MATTER_ID: &str = "matter";
 
 fn default_data_dir() -> PathBuf {
     PathBuf::from("data")
@@ -135,9 +158,24 @@ impl Config {
     }
 
     fn parse(raw: &str) -> anyhow::Result<Self> {
-        let config: Self = toml::from_str(raw)?;
+        let mut config: Self = toml::from_str(raw)?;
+        config.add_default_matter();
         config.validate()?;
         Ok(config)
+    }
+
+    fn add_default_matter(&mut self) {
+        let declared = self
+            .drivers
+            .iter()
+            .any(|driver| driver.kind == DriverKind::Matter || driver.id == DEFAULT_MATTER_ID);
+        if self.matter.enabled && !declared {
+            self.drivers.push(DriverConfig {
+                id: DEFAULT_MATTER_ID.to_owned(),
+                kind: DriverKind::Matter,
+                settings: toml::Table::new(),
+            });
+        }
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -262,7 +300,7 @@ impl DriverConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::Config;
+    use super::{Config, DriverKind};
 
     #[test]
     fn example_config_is_valid() {
@@ -282,5 +320,30 @@ mod tests {
         assert!(Config::parse(bad_id).is_err());
         let two_fabrics = "[[driver]]\nid = \"matter\"\nkind = \"matter\"\n[[driver]]\nid = \"matter2\"\nkind = \"matter\"\n";
         assert!(Config::parse(two_fabrics).is_err());
+    }
+
+    #[test]
+    fn matter_comes_without_configuration() {
+        let matter = |raw: &str| {
+            Config::parse(raw)
+                .unwrap()
+                .drivers
+                .iter()
+                .filter(|driver| driver.kind == DriverKind::Matter)
+                .map(|driver| driver.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(matter(""), ["matter"]);
+        assert_eq!(
+            matter("[[driver]]\nid = \"lights\"\nkind = \"matter\"\n"),
+            ["lights"]
+        );
+        let none: [String; 0] = [];
+        assert_eq!(matter("[matter]\nenabled = false\n"), none);
+        assert_eq!(
+            matter("[[driver]]\nid = \"matter\"\nkind = \"govee\"\n"),
+            none,
+            "the id is taken"
+        );
     }
 }

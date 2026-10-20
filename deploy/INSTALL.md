@@ -219,18 +219,14 @@ sudo systemctl restart hestia
 
 Hestia pilote aussi les lumières Matter en Wi-Fi, en local, sur son propre réseau Matter.
 L'appareil reste utilisable dans l'app de son fabricant (et dans Apple Maison s'il y est déjà).
+Le pilote est actif d'office, rien à ajouter dans `hestia.toml`.
 
-1. Ajoute le pilote dans `/etc/hestia/hestia.toml`, puis redémarre (voir « Modifier la
-   configuration ») :
-   ```toml
-   [[driver]]
-   id = "matter"
-   kind = "matter"
-   ```
-2. Dans l'app du fabricant (Govee Home…), ouvre l'appareil → Matter → partager avec un autre
+1. Dans l'app du fabricant (Govee Home…), ouvre l'appareil → Matter → partager avec un autre
    écosystème. L'app affiche un code à 11 chiffres, valable environ 15 minutes.
-3. Dans Hestia, **Réglages → Matter** : saisis le code et clique sur **Appairer**. Si l'appareil
+2. Dans Hestia, **Réglages → Matter** : saisis le code et clique sur **Appairer**. Si l'appareil
    n'est pas trouvé, indique aussi son adresse IP (Freebox OS → Périphériques réseau).
+
+Pour couper Matter : `[matter]` puis `enabled = false` en haut de `hestia.toml`.
 
 Le réseau Matter de Hestia (ses clés) est dans `/var/lib/hestia/matter.json` : à sauvegarder avec
 le reste du dossier de données. Le perdre oblige à appairer de nouveau chaque appareil.

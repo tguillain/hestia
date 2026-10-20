@@ -906,7 +906,7 @@ function matterSettings() {
   const load = () => attempt(async () => {
     const status = await api('GET', '/api/setup/matter');
     if (!status.enabled) {
-      body.replaceChildren(line('Aucun pilote Matter dans la configuration : ajoute un [[driver]] de type « matter » dans hestia.toml.', 'meta'));
+      body.replaceChildren(line('Matter est désactivé dans la configuration ([matter] enabled = false).', 'meta'));
       return;
     }
     list.replaceChildren(...(status.devices.length
