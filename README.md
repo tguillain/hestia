@@ -15,9 +15,10 @@ boucle de contrôle.
 - **Lumières Matter** en Wi-Fi, pilotées en local sur le réseau Matter de Hestia : appairage
   depuis Réglages avec le code de partage de l'app du fabricant.
 - **Apple Home** : pont HomeKit (HAP) natif, local, appairage par QR code.
-- **Automatisations** : scènes enregistrées depuis l'état des lampes, et règles « quand… alors… »
-  à heure fixe, au lever ou au coucher du soleil, à l'arrivée ou au départ, ou quand un appareil
-  change d'état.
+- **Automatisations** façon n8n : des graphes déclencheur → conditions → actions dessinés sur un
+  canevas (heure, soleil, présence, changement ou seuil d'un appareil ; « si… », attentes ; réglages,
+  scènes), avec essai sans rien commander et historique des exécutions. Scènes enregistrées depuis
+  l'état des lampes.
 - **Présence** : qui est à la maison, d'après les téléphones connectés à la Freebox.
 - **Freebox** : débits, IP externe, températures, ventilateurs, interrupteur Wi-Fi.
 - **Supervision** : serveurs Minecraft, présence des machines du réseau, santé du Raspberry Pi
@@ -66,7 +67,7 @@ signature). Le Pi la propose alors dans Réglages → Mise à jour et via l'outi
 | `hestia-history` | Historique (redb) et graphiques. |
 | `hestia-govee`, `hestia-freebox`, `hestia-minecraft`, `hestia-ping`, `hestia-system` | Pilotes. |
 | `hestia-matter` | Pilote Matter : contrôleur sur [rs-matter](https://github.com/project-chip/rs-matter), découverte mDNS. |
-| `hestia-automation` | Scènes et règles (heure, soleil, présence, état d'un appareil). |
+| `hestia-automation` | Scènes et automatisations en graphe (moteur, essais, historique). |
 | `hestia` | Le programme : configuration, service, outils en ligne de commande. |
 
 ## Sécurité

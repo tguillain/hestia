@@ -1,9 +1,13 @@
-//! What the household sets up in the Settings page, kept in `<data>/automations.json`.
-
-use std::collections::HashSet;
+//! What the household sets up, kept in `<data>/automations.json`.
+//!
+//! An automation is a graph, n8n style: a trigger node, then steps linked by wires. A wire
+//! leaves a node by one of its ports (`out`, or `yes`/`no` after a condition) and enters
+//! the next node.
 
 use hestia_core::{DeviceId, Value};
 use serde::{Deserialize, Serialize};
+
+use crate::legacy::LegacyRule;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Document {
@@ -13,7 +17,10 @@ pub struct Document {
     #[serde(default)]
     pub scenes: Vec<Scene>,
     #[serde(default)]
-    pub rules: Vec<Rule>,
+    pub automations: Vec<Automation>,
+    /// Rules of the first version, turned into automations when read.
+    #[serde(default, skip_serializing)]
+    pub rules: Vec<LegacyRule>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -38,44 +45,219 @@ pub struct SetPoint {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Rule {
+pub struct Automation {
+    #[serde(default)]
     pub id: String,
     pub name: String,
-    #[serde(default = "enabled")]
+    #[serde(default)]
     pub enabled: bool,
-    pub trigger: Trigger,
-    pub action: Action,
+    #[serde(default)]
+    pub mode: Mode,
+    pub graph: Graph,
+    /// Why Hestia switched it off, for instance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
-fn enabled() -> bool {
-    true
+/// What a trigger does while the automation is still running.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// Stop the run in progress and start again.
+    #[default]
+    Restart,
+    /// Ignore the trigger.
+    Single,
+    /// Run afterwards.
+    Queued,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Graph {
+    pub nodes: Vec<Node>,
+    #[serde(default)]
+    pub edges: Vec<Edge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Node {
+    pub id: String,
+    #[serde(flatten)]
+    pub step: Step,
+    /// Position on the canvas only.
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Edge {
+    pub from: String,
+    #[serde(default = "out")]
+    pub port: String,
+    pub to: String,
+}
+
+fn out() -> String {
+    "out".to_owned()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum Trigger {
-    /// Every listed day (1 = Monday … 7 = Sunday; none = every day) at `at`, `HH:MM`.
-    Time {
+pub enum Step {
+    // ---- Triggers
+    /// A point changes, optionally to or from a value, and stays so for `for_s` seconds.
+    WhenState {
+        device: DeviceId,
+        point: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<Value>,
+        #[serde(default)]
+        for_s: u32,
+    },
+    /// A number crosses a threshold.
+    WhenThreshold {
+        device: DeviceId,
+        point: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        above: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        below: Option<f64>,
+        #[serde(default)]
+        for_s: u32,
+    },
+    /// `HH:MM` on the listed days (1 = Monday … 7 = Sunday; none = every day).
+    AtTime {
         at: String,
         #[serde(default)]
         days: Vec<u8>,
     },
     /// Sunrise or sunset, shifted by `offset_min` (negative: before).
-    Sun {
+    AtSun {
         event: SunEvent,
         #[serde(default)]
         offset_min: i32,
         #[serde(default)]
         days: Vec<u8>,
     },
+    /// Every `minutes`, counted from midnight.
+    Every {
+        minutes: u32,
+    },
+    /// Shortly after Hestia starts.
+    OnStart,
+    /// Only when someone presses « Lancer ».
+    Manual,
     /// The first person arriving, or the last one leaving.
-    Presence { event: PresenceEvent },
-    /// A point taking a value, e.g. the desktop computer coming online.
-    State {
+    Presence {
+        event: PresenceEvent,
+    },
+
+    // ---- Logic
+    /// Leaves by `yes` or `no`.
+    If {
+        rules: Vec<Rule>,
+        /// All rules (and) or any of them (or).
+        #[serde(default = "yes")]
+        all: bool,
+    },
+    Wait {
+        seconds: u32,
+    },
+    /// Leaves by `ok` as soon as the rule holds, or by `timeout`.
+    WaitFor {
+        rule: Rule,
+        timeout_s: u32,
+    },
+
+    // ---- Actions
+    Set {
         device: DeviceId,
         point: String,
         value: Value,
     },
+    Toggle {
+        device: DeviceId,
+        point: String,
+    },
+    Scene {
+        scene: String,
+    },
+    /// Every lamp (a switch with brightness or colour), never other switches such as Wi-Fi.
+    LightsOff,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Step {
+    #[must_use]
+    pub fn is_trigger(&self) -> bool {
+        matches!(
+            self,
+            Self::WhenState { .. }
+                | Self::WhenThreshold { .. }
+                | Self::AtTime { .. }
+                | Self::AtSun { .. }
+                | Self::Every { .. }
+                | Self::OnStart
+                | Self::Manual
+                | Self::Presence { .. }
+        )
+    }
+
+    /// The ports a wire may leave by.
+    #[must_use]
+    pub fn ports(&self) -> &'static [&'static str] {
+        match self {
+            Self::If { .. } => &["yes", "no"],
+            Self::WaitFor { .. } => &["ok", "timeout"],
+            _ => &["out"],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Rule {
+    State {
+        device: DeviceId,
+        point: String,
+        #[serde(default)]
+        op: Op,
+        value: Value,
+    },
+    /// Between `after` and `before` (`HH:MM`, either may be missing, may wrap midnight).
+    Time {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        before: Option<String>,
+        #[serde(default)]
+        days: Vec<u8>,
+    },
+    Sun {
+        is: Daylight,
+    },
+    Presence {
+        is: Occupancy,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Op {
+    #[default]
+    Eq,
+    Ne,
+    Gt,
+    Ge,
+    Lt,
+    Le,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,15 +274,51 @@ pub enum PresenceEvent {
     LastDeparture,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum Action {
-    Scene {
-        scene: String,
-    },
-    Set(SetPoint),
-    /// Every lamp (a switch with brightness or colour), never other switches such as Wi-Fi.
-    LightsOff,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Daylight {
+    Day,
+    Night,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Occupancy {
+    Someone,
+    Nobody,
+}
+
+impl Graph {
+    #[must_use]
+    pub fn node(&self, id: &str) -> Option<&Node> {
+        self.nodes.iter().find(|node| node.id == id)
+    }
+
+    /// The nodes a wire from `from`'s `port` leads to, in wire order.
+    pub fn next<'a>(&'a self, from: &'a str, port: &'a str) -> impl Iterator<Item = &'a Node> {
+        self.edges
+            .iter()
+            .filter(move |edge| edge.from == from && edge.port == port)
+            .filter_map(|edge| self.node(&edge.to))
+    }
+
+    pub fn triggers(&self) -> impl Iterator<Item = &Node> {
+        self.nodes.iter().filter(|node| node.step.is_trigger())
+    }
+}
+
+impl Document {
+    #[must_use]
+    pub fn scene(&self, id: &str) -> Option<&Scene> {
+        self.scenes.iter().find(|scene| scene.id == id)
+    }
+
+    #[must_use]
+    pub fn automation(&self, id: &str) -> Option<&Automation> {
+        self.automations
+            .iter()
+            .find(|automation| automation.id == id)
+    }
 }
 
 /// `HH:MM` as minutes after midnight.
@@ -112,83 +330,9 @@ pub fn parse_time(raw: &str) -> Option<u32> {
     (hours < 24 && minutes < 60).then_some(hours * 60 + minutes)
 }
 
-impl Document {
-    /// # Errors
-    /// The first problem found, worded for the household.
-    pub fn validate(&self) -> Result<(), String> {
-        if let Some(location) = &self.location
-            && !((-90.0..=90.0).contains(&location.latitude)
-                && (-180.0..=180.0).contains(&location.longitude))
-        {
-            return Err("latitude ou longitude hors limites".to_owned());
-        }
-        let mut ids = HashSet::new();
-        for scene in &self.scenes {
-            check_name(&scene.name)?;
-            if !ids.insert(scene.id.as_str()) {
-                return Err(format!("identifiant « {} » en double", scene.id));
-            }
-        }
-        for rule in &self.rules {
-            check_name(&rule.name)?;
-            if !ids.insert(rule.id.as_str()) {
-                return Err(format!("identifiant « {} » en double", rule.id));
-            }
-            match &rule.trigger {
-                Trigger::Time { at, days } => {
-                    if parse_time(at).is_none() {
-                        return Err(format!("« {at} » n'est pas une heure (HH:MM)"));
-                    }
-                    check_days(days)?;
-                }
-                Trigger::Sun {
-                    offset_min, days, ..
-                } => {
-                    if offset_min.abs() > 6 * 60 {
-                        return Err("décalage de plus de 6 heures".to_owned());
-                    }
-                    check_days(days)?;
-                }
-                Trigger::Presence { .. } | Trigger::State { .. } => {}
-            }
-            if let Action::Scene { scene } = &rule.action
-                && !self.scenes.iter().any(|candidate| &candidate.id == scene)
-            {
-                return Err(format!(
-                    "la règle « {} » lance une scène qui n'existe plus",
-                    rule.name
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    #[must_use]
-    pub fn scene(&self, id: &str) -> Option<&Scene> {
-        self.scenes.iter().find(|scene| scene.id == id)
-    }
-}
-
-fn check_name(name: &str) -> Result<(), String> {
-    let length = name.trim().chars().count();
-    if (1..=60).contains(&length) {
-        Ok(())
-    } else {
-        Err("nom de 1 à 60 caractères".to_owned())
-    }
-}
-
-fn check_days(days: &[u8]) -> Result<(), String> {
-    if days.iter().all(|day| (1..=7).contains(day)) {
-        Ok(())
-    } else {
-        Err("jours de 1 (lundi) à 7 (dimanche)".to_owned())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Document, parse_time};
+    use super::{Document, Step, parse_time};
 
     #[test]
     fn times() {
@@ -199,31 +343,48 @@ mod tests {
     }
 
     #[test]
-    fn documents_are_checked() {
+    fn graphs_read_like_moli() {
         let document: Document = serde_json::from_value(serde_json::json!({
-            "location": {"latitude": 48.85, "longitude": 2.35},
-            "scenes": [{"id": "s1", "name": "Soirée", "actions": [
-                {"device": "govee:abc", "point": "on", "value": true},
-                {"device": "govee:abc", "point": "brightness", "value": 40}
-            ]}],
-            "rules": [
-                {"id": "r1", "name": "Le soir", "trigger": {"type": "sun", "event": "sunset", "offset_min": -15},
-                 "action": {"type": "scene", "scene": "s1"}},
-                {"id": "r2", "name": "Départ", "trigger": {"type": "presence", "event": "last_departure"},
-                 "action": {"type": "set", "device": "govee:abc", "point": "on", "value": false}},
-                {"id": "r3", "name": "Réveil", "enabled": false, "trigger": {"type": "time", "at": "07:00", "days": [1, 2, 3, 4, 5]},
-                 "action": {"type": "scene", "scene": "s1"}}
-            ]
+            "automations": [{
+                "id": "portail", "name": "Portail ouvert la nuit", "enabled": true,
+                "graph": {
+                    "nodes": [
+                        {"id": "t", "type": "when_state", "device": "z:portail", "point": "contact", "to": false, "x": 0, "y": 0},
+                        {"id": "n1", "type": "if", "rules": [{"kind": "sun", "is": "night"}], "x": 300, "y": 0},
+                        {"id": "n2", "type": "set", "device": "hue:entree", "point": "on", "value": true},
+                        {"id": "n3", "type": "wait", "seconds": 300},
+                        {"id": "n4", "type": "set", "device": "hue:entree", "point": "on", "value": false}
+                    ],
+                    "edges": [
+                        {"from": "t", "to": "n1"},
+                        {"from": "n1", "port": "yes", "to": "n2"},
+                        {"from": "n2", "to": "n3"},
+                        {"from": "n3", "to": "n4"}
+                    ]
+                }
+            }]
         }))
         .unwrap();
-        assert_eq!(document.validate(), Ok(()));
-        assert!(document.rules[0].enabled, "enabled by default");
-
-        let mut broken = document.clone();
-        broken.scenes.clear();
-        assert!(broken.validate().unwrap_err().contains("n'existe plus"));
-        let mut duplicate = document;
-        duplicate.rules[1].id = "s1".to_owned();
-        assert!(duplicate.validate().is_err());
+        let graph = &document.automations[0].graph;
+        assert!(graph.nodes[0].step.is_trigger());
+        assert!(matches!(graph.nodes[1].step, Step::If { all: true, .. }));
+        assert_eq!(
+            graph
+                .next("n1", "yes")
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            ["n2"]
+        );
+        assert_eq!(graph.next("n1", "no").count(), 0);
+        assert_eq!(graph.edges[0].port, "out");
+        let back = serde_json::to_value(&document).unwrap();
+        assert_eq!(
+            back["automations"][0]["graph"]["nodes"][0]["type"],
+            "when_state"
+        );
+        assert!(
+            back.get("rules").is_none(),
+            "legacy rules are never written back"
+        );
     }
 }

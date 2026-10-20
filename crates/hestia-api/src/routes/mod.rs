@@ -80,6 +80,9 @@ pub(crate) fn api() -> Router<AppState> {
             get(automations::get).put(automations::replace),
         )
         .route("/api/automations/scenes", post(automations::capture))
+        .route("/api/automations/test", post(automations::test))
+        .route("/api/automations/runs", get(automations::runs))
+        .route("/api/automations/{id}/run", post(automations::run_now))
         .route("/api/scenes/{id}/run", post(automations::run_scene))
         .route("/api/setup/matter", get(matter::list))
         .route("/api/setup/matter/devices", post(matter::pair))

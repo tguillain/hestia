@@ -246,10 +246,13 @@ le reste du dossier de données. Le perdre oblige à appairer de nouveau chaque 
   Freebox. Sur iPhone, mets « Adresse Wi-Fi privée » sur **Fixe** pour le Wi-Fi de la maison,
   sinon le téléphone change d'adresse et n'est plus reconnu. Un téléphone absent du réseau depuis
   plus de 10 minutes compte comme parti (`presence_grace_s` dans les réglages du pilote Freebox).
-- **Automatisations** (Réglages → Automatisations) : indique la position de la maison pour les
-  heures de lever et de coucher du soleil, enregistre des scènes depuis l'état des lampes, puis
-  ajoute des règles. Les scènes ont aussi un bouton sur le tableau de bord. Tout est gardé dans
-  `/var/lib/hestia/automations.json`.
+- **Automatisations** (lien en haut de page) : indique la position de la maison pour les heures
+  de lever et de coucher du soleil, enregistre des scènes depuis l'état des lampes, puis dessine
+  des automatisations : un déclencheur, puis des étapes reliées par des fils (une condition « Si… »
+  a une sortie oui et une sortie non). **Tester** suit le graphe sans rien commander et colore le
+  chemin. Une automatisation qui démarre plus de 20 fois en une minute est mise en pause toute
+  seule. Tout est gardé dans `/var/lib/hestia/automations.json`, l'historique dans
+  `automation-runs.jsonl`.
 
 ## Dépannage
 

@@ -1,11 +1,11 @@
-//! Scenes and rules: edited in the Settings page, scenes started from the dashboard.
+//! Scenes and automations: edited on the Automatisations page, scenes started from the dashboard.
 
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use hestia_automation::{Automations, Document, Scene};
+use hestia_automation::{Automation, Automations, Document, Run, Scene};
 use hestia_core::{DeviceId, Origin};
 use serde::Deserialize;
 use serde_json::{Value as Json_, json};
@@ -23,9 +23,11 @@ pub(crate) async fn get(
     let sun = automations
         .sun_today()
         .map(|(sunrise, sunset)| json!({ "sunrise": sunrise, "sunset": sunset }));
-    Ok(Json(
-        json!({ "document": automations.document(), "sun": sun }),
-    ))
+    Ok(Json(json!({
+        "document": automations.document(),
+        "sun": sun,
+        "runs": automations.runs(None, RECENT_LIST),
+    })))
 }
 
 pub(crate) async fn replace(
@@ -39,7 +41,7 @@ pub(crate) async fn replace(
     info!(
         user = user.name,
         scenes = saved.scenes.len(),
-        rules = saved.rules.len(),
+        automations = saved.automations.len(),
         "automations saved"
     );
     Ok(Json(saved))
@@ -80,6 +82,54 @@ pub(crate) async fn run_scene(
     info!(user = user.name, scene = id, "scene run");
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Runs now, by hand, even when switched off.
+pub(crate) async fn run_now(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    enabled(&state)?.run_now(&id).map_err(ApiError::NotFound)?;
+    info!(user = user.name, automation = id, "automation run by hand");
+    Ok(StatusCode::ACCEPTED)
+}
+
+/// Tries an automation as edited, saved or not: nothing is commanded, nothing waits.
+pub(crate) async fn test(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    Json(automation): Json<Automation>,
+) -> Result<Json<Run>, ApiError> {
+    enabled(&state)?
+        .test(automation)
+        .await
+        .map(Json)
+        .map_err(ApiError::Invalid)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RunsQuery {
+    automation: Option<String>,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+fn default_limit() -> usize {
+    20
+}
+
+pub(crate) async fn runs(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    Query(query): Query<RunsQuery>,
+) -> Result<Json<Vec<Run>>, ApiError> {
+    Ok(Json(
+        enabled(&state)?.runs(query.automation.as_deref(), query.limit.min(200)),
+    ))
+}
+
+/// Runs listed with the automations, enough to show each one's last run.
+const RECENT_LIST: usize = 100;
 
 fn enabled(state: &AppState) -> Result<&Arc<Automations>, ApiError> {
     state
