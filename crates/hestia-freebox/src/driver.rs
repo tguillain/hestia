@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::bail;
 use hestia_core::{DeviceId, DeviceInfo, PointKind, PointSpec, Semantic, Unit, Value};
@@ -10,7 +10,8 @@ use tokio::time::{self, MissedTickBehavior};
 use tracing::{info, warn};
 
 use crate::api::{ApiError, ApiVersion, FreeboxApi};
-use crate::model::{Connection, Reading, System, WifiConfig};
+use crate::model::{Connection, LanHost, Reading, System, WifiConfig};
+use crate::presence::{LAN_HOSTS, People, Person, is_home, load_people};
 use crate::token::{Token, load_token};
 
 /// The dashboard writes the token: pick it up quickly.
@@ -22,6 +23,8 @@ pub struct FreeboxConfig {
     pub host: String,
     pub port: u16,
     pub poll_interval_s: u64,
+    /// A followed phone unseen for this long counts as away.
+    pub presence_grace_s: u64,
 }
 
 impl Default for FreeboxConfig {
@@ -30,6 +33,7 @@ impl Default for FreeboxConfig {
             host: "mafreebox.freebox.fr".to_owned(),
             port: 80,
             poll_interval_s: 15,
+            presence_grace_s: 600,
         }
     }
 }
@@ -69,12 +73,20 @@ impl FreeboxDriver {
         );
         let id = ctx.device_id("box")?;
         let mut layout: Option<Layout> = None;
+        let mut presence = Presence::default();
         let mut poll = time::interval(Duration::from_secs(self.config.poll_interval_s.max(5)));
         poll.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             tokio::select! {
                 _ = poll.tick() => {
-                    match poll_once(ctx, &api, &id, &version, &mut layout).await {
+                    let mut result = poll_once(ctx, &api, &id, &version, &mut layout).await;
+                    if result.is_ok() {
+                        let people = load_people(&self.data_dir);
+                        result = presence
+                            .poll(ctx, &api, &people, self.config.presence_grace_s)
+                            .await;
+                    }
+                    match result {
                         Err(ApiError::Session) => api.login(&token.app_token).await?,
                         result => result?,
                     }
@@ -166,6 +178,97 @@ async fn poll_once(
     }
     ctx.set_available(id, true);
     Ok(())
+}
+
+/// The people declared as devices, and whether the box refused the network browser.
+#[derive(Default)]
+struct Presence {
+    declared: Vec<Person>,
+    refused: bool,
+}
+
+impl Presence {
+    async fn poll(
+        &mut self,
+        ctx: &DriverContext,
+        api: &FreeboxApi,
+        people: &People,
+        grace_s: u64,
+    ) -> Result<(), ApiError> {
+        if self.declared != people.people {
+            for gone in self
+                .declared
+                .iter()
+                .filter(|person| !people.people.contains(person))
+            {
+                if let Ok(id) = ctx.device_id(&person_native(gone)) {
+                    ctx.remove_device(&id);
+                }
+            }
+            for person in &people.people {
+                if let Ok(id) = ctx.device_id(&person_native(person)) {
+                    ctx.upsert_device(person_info(id, person));
+                }
+            }
+            self.declared.clone_from(&people.people);
+        }
+        if people.people.is_empty() {
+            return Ok(());
+        }
+        let hosts: Vec<LanHost> = match api.get(LAN_HOSTS).await {
+            Ok(hosts) => hosts,
+            Err(ApiError::Permission(reason)) => {
+                if !self.refused {
+                    warn!(
+                        reason,
+                        "Freebox refuses the network browser: presence unavailable"
+                    );
+                    self.refused = true;
+                }
+                for person in &people.people {
+                    if let Ok(id) = ctx.device_id(&person_native(person)) {
+                        ctx.set_available(&id, false);
+                    }
+                }
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
+        self.refused = false;
+        let now_s = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        for person in &people.people {
+            let Ok(id) = ctx.device_id(&person_native(person)) else {
+                continue;
+            };
+            let host = hosts
+                .iter()
+                .find(|host| host.mac().as_deref() == Some(person.mac.as_str()));
+            ctx.set_state(&id, "home", Value::Bool(is_home(host, now_s, grace_s)));
+            ctx.set_available(&id, true);
+        }
+        Ok(())
+    }
+}
+
+fn person_native(person: &Person) -> String {
+    format!("person-{}", person.id)
+}
+
+fn person_info(id: DeviceId, person: &Person) -> DeviceInfo {
+    DeviceInfo {
+        id,
+        name: person.name.clone(),
+        manufacturer: None,
+        model: Some("Présence".to_owned()),
+        points: vec![PointSpec::new(
+            "home",
+            "À la maison",
+            PointKind::Binary,
+            Semantic::Presence,
+        )],
+    }
 }
 
 /// Sends the Wi-Fi switch command; returns the state the box reports.

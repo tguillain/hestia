@@ -20,6 +20,57 @@ pub struct WifiConfig {
     pub enabled: bool,
 }
 
+/// A machine of the local network, as the Freebox network browser lists it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LanHost {
+    #[serde(default)]
+    pub primary_name: String,
+    #[serde(default)]
+    pub vendor_name: String,
+    /// `smartphone`, `workstation`, `tablet`…
+    #[serde(default)]
+    pub host_type: String,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub reachable: bool,
+    /// Unix seconds.
+    #[serde(default)]
+    pub last_time_reachable: u64,
+    pub l2ident: L2Ident,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct L2Ident {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+impl LanHost {
+    /// Lowercase MAC address, when the host is identified by one.
+    #[must_use]
+    pub fn mac(&self) -> Option<String> {
+        (self.l2ident.kind == "mac_address")
+            .then(|| crate::presence::normalize_mac(&self.l2ident.id))
+            .flatten()
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        if self.primary_name.is_empty() {
+            &self.l2ident.id
+        } else {
+            &self.primary_name
+        }
+    }
+
+    #[must_use]
+    pub fn is_phone(&self) -> bool {
+        matches!(self.host_type.as_str(), "smartphone" | "tablet")
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct System {
     #[serde(default)]

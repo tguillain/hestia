@@ -40,6 +40,11 @@ pub(crate) fn api() -> Router<AppState> {
             post(setup::freebox_authorize),
         )
         .route(
+            "/api/setup/presence",
+            get(setup::presence).post(setup::add_followed),
+        )
+        .route("/api/setup/presence/{id}", delete(setup::remove_followed))
+        .route(
             "/api/setup/tokens",
             get(setup::tokens).post(setup::create_token),
         )

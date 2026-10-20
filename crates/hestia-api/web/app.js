@@ -123,6 +123,7 @@ function formatValue(spec) {
   const current = spec.value;
   if (current === null || current === undefined || current === '') return '—';
   if (typeof current === 'boolean' && spec.semantic === 'connectivity') return current ? 'En ligne' : 'Hors ligne';
+  if (typeof current === 'boolean' && spec.semantic === 'presence') return current ? 'À la maison' : 'Absent';
   if (typeof current === 'boolean') return current ? 'Oui' : 'Non';
   if (typeof current === 'object') return rgbToHex(current);
   if (typeof current !== 'number') return String(current);
@@ -315,7 +316,7 @@ function genericCard(device) {
 // ---- Charts ------------------------------------------------------------------------------
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const BINARY_SEMANTICS = new Set(['connectivity', 'on_off']);
+const BINARY_SEMANTICS = new Set(['connectivity', 'on_off', 'presence']);
 
 function svg(tag, attrs = {}, ...children) {
   const element = document.createElementNS(SVG_NS, tag);
@@ -633,6 +634,7 @@ function renderSettings(user) {
       matterSettings(),
       homekitSettings(),
       freeboxSettings(),
+      presenceSettings(),
       tokenSettings(),
       accountSettings(user),
       updateSettings(),
@@ -710,6 +712,55 @@ function freeboxSettings() {
   });
   load();
   return settingsCard('Freebox', 'Débits, températures et Wi-Fi de la box.', body);
+}
+
+function presenceSettings() {
+  const body = h('div', { class: 'setting-body' }, line('Chargement…', 'meta'));
+  let showAll = false;
+  const load = () => attempt(async () => {
+    let status;
+    try {
+      status = await api('GET', '/api/setup/presence');
+    } catch (error) {
+      if (error.status !== 404) throw error;
+      body.replaceChildren(line('Il faut le pilote Freebox pour savoir qui est à la maison.', 'meta'));
+      return;
+    }
+    const people = h('ul', { class: 'item-list' }, ...(status.people.length
+      ? status.people.map((person) => {
+        const remove = h('button', { class: 'ghost danger' }, 'Ne plus suivre');
+        remove.addEventListener('click', async () => {
+          if (await attempt(() => api('DELETE', `/api/setup/presence/${encodeURIComponent(person.id)}`))) load();
+        });
+        return h('li', {}, h('span', { class: 'item-name' }, person.name), h('span', { class: 'meta' }, person.mac), remove);
+      })
+      : [h('li', { class: 'meta' }, 'Personne n’est suivi pour l’instant.')]));
+    const candidates = status.hosts.filter((host) => !host.followed && (showAll || host.phone));
+    const hosts = h('ul', { class: 'item-list' }, ...(candidates.length ? [] : [h('li', { class: 'meta' }, 'Aucun autre téléphone vu par la Freebox.')]), ...candidates.map((host) => {
+      const follow = h('button', { class: 'pill' }, 'Suivre');
+      follow.addEventListener('click', async () => {
+        const guess = host.name.replace(/^(iphone|ipad|galaxy|pixel|téléphone)[\s-]+(de|d’|d')[\s-]*/i, '');
+        const name = prompt('Prénom de la personne qui a ce téléphone :', guess);
+        if (!name) return;
+        if (await attempt(() => api('POST', '/api/setup/presence', { name, mac: host.mac }))) load();
+      });
+      return h('li', {},
+        h('span', { class: 'item-name' }, host.name),
+        h('span', { class: 'meta' }, [host.vendor, host.mac].filter(Boolean).join(' · ')),
+        host.active ? h('span', { class: 'badge' }, 'connecté') : null,
+        follow);
+    }));
+    const toggle = h('button', { class: 'ghost' }, showAll ? 'Seulement les téléphones' : 'Tous les appareils du réseau');
+    toggle.addEventListener('click', () => { showAll = !showAll; load(); });
+    body.replaceChildren(
+      people,
+      h('h4', {}, 'Suivre un téléphone'),
+      ...(status.error ? [line(`Liste des appareils indisponible : ${status.error}`, 'form-error')] : [hosts, toggle]),
+      line('Sur iPhone, choisis « Adresse Wi-Fi privée : Fixe » pour le Wi-Fi de la maison (Réglages → Wi-Fi → ⓘ), sinon le téléphone change d’adresse et n’est plus reconnu.', 'meta'),
+    );
+  });
+  load();
+  return settingsCard('Présence', 'Qui est à la maison, d’après les téléphones connectés à la Freebox.', body);
 }
 
 function copyButton(label, text) {

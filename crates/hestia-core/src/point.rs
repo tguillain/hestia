@@ -69,6 +69,8 @@ pub enum Semantic {
     ColorMode,
     Temperature,
     Connectivity,
+    /// Someone is home (`true`) or away.
+    Presence,
     Throughput,
     Latency,
     Count,

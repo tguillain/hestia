@@ -7,7 +7,10 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use hestia_freebox::{FreeboxApi, Token, load_token, save_token};
+use hestia_freebox::{
+    FreeboxApi, Person, Token, add_person, lan_hosts, load_people, load_token, remove_person,
+    save_token,
+};
 use qrcode::QrCode;
 use qrcode::render::svg;
 use serde::{Deserialize, Serialize};
@@ -237,6 +240,80 @@ fn device_name() -> String {
         .map(|name| name.trim().to_owned())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "Hestia".to_owned())
+}
+
+// ---- Presence -----------------------------------------------------------------------------
+
+/// The people followed, and the machines the box sees to choose new ones.
+pub(crate) async fn presence(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+) -> Result<Json<Json_>, ApiError> {
+    let config = freebox_config(&state)?;
+    let data_dir = &state.setup.config.data_dir;
+    let people = load_people(data_dir).people;
+    let (hosts, error) = match lan_hosts(&config, data_dir).await {
+        Ok(hosts) => (hosts, None),
+        Err(error) => (Vec::new(), Some(format!("{error:#}"))),
+    };
+    let hosts: Vec<Json_> = hosts
+        .iter()
+        .filter_map(|host| {
+            let mac = host.mac()?;
+            Some(json!({
+                "name": host.name(),
+                "mac": mac,
+                "vendor": host.vendor_name,
+                "phone": host.is_phone(),
+                "active": host.active,
+                "followed": people.iter().any(|person| person.mac == mac),
+            }))
+        })
+        .collect();
+    Ok(Json(
+        json!({ "people": people, "hosts": hosts, "error": error }),
+    ))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct NewPerson {
+    name: String,
+    mac: String,
+}
+
+pub(crate) async fn add_followed(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Json(body): Json<NewPerson>,
+) -> Result<(StatusCode, Json<Person>), ApiError> {
+    freebox_config(&state)?;
+    let person = add_person(&state.setup.config.data_dir, &body.name, &body.mac)
+        .map_err(|error| ApiError::Invalid(format!("{error:#}")))?;
+    info!(user = user.name, person = person.id, "presence followed");
+    Ok((StatusCode::CREATED, Json(person)))
+}
+
+pub(crate) async fn remove_followed(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let removed =
+        remove_person(&state.setup.config.data_dir, &id).map_err(|_| ApiError::Internal)?;
+    if !removed {
+        return Err(ApiError::NotFound(format!("personne « {id} » inconnue")));
+    }
+    info!(user = user.name, person = id, "presence no longer followed");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn freebox_config(state: &AppState) -> Result<hestia_freebox::FreeboxConfig, ApiError> {
+    state
+        .setup
+        .config
+        .freebox
+        .clone()
+        .ok_or_else(|| ApiError::NotFound("aucun pilote Freebox dans la configuration".to_owned()))
 }
 
 // ---- AI access tokens -------------------------------------------------------------------

@@ -10,7 +10,9 @@ use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use hestia_core::{Command, DeviceId, Origin, Value};
-use hestia_freebox::{FreeboxApi, FreeboxConfig, FreeboxDriver, Token, password, save_token};
+use hestia_freebox::{
+    FreeboxApi, FreeboxConfig, FreeboxDriver, Token, add_person, password, save_token,
+};
 use hestia_hub::{Hub, spawn_driver};
 use serde_json::{Value as JsonValue, json};
 
@@ -21,6 +23,7 @@ const SESSION: &str = "session-abc";
 #[derive(Default)]
 struct Fake {
     wifi: Mutex<bool>,
+    hosts: Mutex<JsonValue>,
     logins: AtomicU32,
     expire_next: AtomicBool,
 }
@@ -47,6 +50,7 @@ fn authorised(fake: &Fake, headers: &HeaderMap) -> bool {
 async fn start_fake() -> (SocketAddr, Shared) {
     let fake: Shared = Arc::new(Fake {
         wifi: Mutex::new(true),
+        hosts: Mutex::new(json!([])),
         ..Fake::default()
     });
     let router = Router::new()
@@ -93,6 +97,15 @@ async fn start_fake() -> (SocketAddr, Shared) {
                     "sensors": [{"id": "temp_cpu0", "name": "Température CPU", "value": 55}],
                     "fans": [{"id": "fan0", "name": "Ventilateur", "value": 1800}]
                 }))
+            }),
+        )
+        .route(
+            "/api/v16/lan/browser/pub/",
+            get(|State(fake): State<Shared>, headers: HeaderMap| async move {
+                if !authorised(&fake, &headers) {
+                    return refused("auth_required");
+                }
+                ok(&fake.hosts.lock().unwrap().clone())
             }),
         )
         .route(
@@ -154,6 +167,7 @@ async fn driver_reads_the_box_and_switches_wifi() {
         host: "127.0.0.1".to_owned(),
         port: address.port(),
         poll_interval_s: 5,
+        ..FreeboxConfig::default()
     };
     let hub = Hub::new(HashMap::new());
     spawn_driver(
@@ -210,4 +224,54 @@ async fn wrong_token_cannot_log_in() {
         .await
         .unwrap();
     assert!(api.login("not-the-token").await.is_err());
+}
+
+#[tokio::test]
+async fn phones_tell_who_is_home() {
+    let (address, fake) = start_fake().await;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    *fake.hosts.lock().unwrap() = json!([
+        {"primary_name": "iPhone de Thomas", "host_type": "smartphone", "active": true,
+         "last_time_reachable": now, "l2ident": {"id": "AA:BB:CC:DD:EE:01", "type": "mac_address"}},
+        {"primary_name": "Pixel", "host_type": "smartphone", "active": false,
+         "last_time_reachable": now - 3600, "l2ident": {"id": "AA:BB:CC:DD:EE:02", "type": "mac_address"}},
+    ]);
+    let data_dir = temp_dir("presence");
+    save_token(
+        &data_dir,
+        &Token {
+            app_token: TOKEN.to_owned(),
+            box_uid: "test-box".to_owned(),
+        },
+    )
+    .unwrap();
+    add_person(&data_dir, "Thomas", "aa:bb:cc:dd:ee:01").unwrap();
+    add_person(&data_dir, "Léa", "aa:bb:cc:dd:ee:02").unwrap();
+    let config = FreeboxConfig {
+        host: "127.0.0.1".to_owned(),
+        port: address.port(),
+        poll_interval_s: 5,
+        ..FreeboxConfig::default()
+    };
+    let hub = Hub::new(HashMap::new());
+    spawn_driver(
+        &hub,
+        "freebox",
+        Arc::new(FreeboxDriver::new(config.clone(), data_dir.clone())),
+    );
+    let thomas: DeviceId = "freebox:person-thomas".parse().unwrap();
+    let lea: DeviceId = "freebox:person-lea".parse().unwrap();
+    wait_for(&hub, &thomas, "home", &Value::Bool(true)).await;
+    wait_for(&hub, &lea, "home", &Value::Bool(false)).await;
+    assert_eq!(hub.device(&lea).unwrap().name, "Léa");
+
+    let hosts = hestia_freebox::lan_hosts(&config, &data_dir).await.unwrap();
+    assert_eq!(
+        hosts[0].name(),
+        "iPhone de Thomas",
+        "connected phones first"
+    );
 }
