@@ -1412,12 +1412,29 @@ function setLive(live) {
   dot.title = live ? 'Temps réel : connecté' : 'Temps réel : reconnexion…';
 }
 
+// The interface this page runs: after an update the server sends another one, and an
+// open page would otherwise keep the old screens until someone reloads it.
+async function interfaceVersion() {
+  try {
+    return (await fetch('/app.js', { method: 'HEAD', cache: 'no-store' })).headers.get('etag');
+  } catch {
+    return null;
+  }
+}
+const loadedInterface = interfaceVersion();
+
+async function reloadIfUpdated() {
+  const [loaded, served] = await Promise.all([loadedInterface, interfaceVersion()]);
+  if (loaded && served && loaded !== served) location.reload();
+  else scheduleReload();
+}
+
 function startEvents() {
   stopEvents();
   let opened = false;
   events = new EventSource('/api/events');
   events.addEventListener('open', () => {
-    if (opened) scheduleReload();
+    if (opened) reloadIfUpdated();
     opened = true;
     setLive(true);
   });
