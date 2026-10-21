@@ -1,27 +1,35 @@
 // The Automatisations page: scenes, the house's location, and automations drawn as graphs
 // (n8n style): nodes linked by wires on a canvas, a side panel to set the selected node.
 
+import {
+  appearance, conditionChoices, conditionKey, conditionTitle, eventChoices, eventKey, eventTitle, fits, kindOf,
+  measureChoices, settingWords, thresholdTitle, valueText,
+} from './device-words.js';
+
 const NODE_W = 210;
 const NODE_H = 78;
 const GRID = 10;
 const DAY_LABELS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
+// `hidden`: shown on the canvas but not offered in the palette (another entry covers it).
 const STEPS = {
-  when_state: { group: 'trigger', title: 'Quand un appareil change' },
-  when_threshold: { group: 'trigger', title: 'Quand une valeur passe un seuil' },
-  at_time: { group: 'trigger', title: 'À une heure' },
-  at_sun: { group: 'trigger', title: 'Lever ou coucher du soleil' },
-  every: { group: 'trigger', title: 'Toutes les N minutes' },
-  presence: { group: 'trigger', title: 'Arrivée ou départ' },
-  on_start: { group: 'trigger', title: 'Au démarrage de Hestia' },
-  manual: { group: 'trigger', title: 'À la main' },
-  if: { group: 'logic', title: 'Si…' },
-  wait: { group: 'logic', title: 'Attendre' },
-  wait_for: { group: 'logic', title: 'Attendre que…' },
-  set: { group: 'action', title: 'Régler un appareil' },
-  toggle: { group: 'action', title: 'Basculer' },
-  scene: { group: 'action', title: 'Lancer une scène' },
-  lights_off: { group: 'action', title: 'Éteindre toutes les lumières' },
+  when_state: { group: 'trigger', title: 'Un appareil change', hint: 'Une lampe s’allume, un téléphone arrive, le PC se connecte…' },
+  when_threshold: { group: 'trigger', title: 'Une mesure passe un seuil', hint: 'Une température dépasse 25 °C, un débit tombe…' },
+  at_time: { group: 'trigger', title: 'À une heure', hint: 'Tous les jours ou certains jours' },
+  at_sun: { group: 'trigger', title: 'Lever ou coucher du soleil', hint: 'Avec un décalage si besoin' },
+  every: { group: 'trigger', title: 'Toutes les N minutes', hint: 'À intervalle régulier' },
+  presence: { group: 'trigger', title: 'Arrivée ou départ', hint: 'Le premier qui rentre, le dernier qui part' },
+  on_start: { group: 'trigger', title: 'Au démarrage de Hestia', hint: 'Après une mise à jour ou une coupure' },
+  manual: { group: 'trigger', title: 'À la main', hint: 'Avec le bouton « Lancer »' },
+  if: { group: 'logic', title: 'Si…', hint: 'Continue par « oui » ou par « non »' },
+  wait: { group: 'logic', title: 'Attendre', hint: 'Une durée fixe' },
+  wait_for: { group: 'logic', title: 'Attendre que…', hint: 'Jusqu’à ce qu’une condition soit vraie' },
+  device: { group: 'action', title: 'Régler un appareil', hint: 'Son état voulu : allumé, luminosité, couleur…' },
+  // Written by the first editor, turned into « device » steps when opened.
+  set: { group: 'action', title: 'Régler un appareil', hidden: true },
+  toggle: { group: 'action', title: 'Régler un appareil', hidden: true },
+  scene: { group: 'action', title: 'Lancer une scène', hint: 'Plusieurs lampes d’un coup' },
+  lights_off: { group: 'action', title: 'Éteindre toutes les lumières', hint: 'Les lampes seulement, pas le Wi-Fi ni les prises' },
 };
 const GROUPS = { trigger: 'Déclencheurs', logic: 'Logique', action: 'Actions' };
 const PORT_LABELS = { yes: 'oui', no: 'non', ok: 'ok', timeout: 'délai' };
@@ -63,25 +71,29 @@ function duration(seconds) {
   return `${seconds} s`;
 }
 
-function pointName(ui, deviceId, key) {
-  const device = ui.devices.get(deviceId);
-  if (!device) return `${deviceId} · ${key}`;
-  const spec = ui.point(device, key);
-  return `${device.name} · ${spec?.label ?? key}`;
+const isWritable = (spec) => spec.access === 'read_write';
+
+// A step of the first editor (one point set or inverted) as a « device » step.
+function upgradeStep(node) {
+  if (node.type === 'set') {
+    const { point, value, ...rest } = node;
+    return { ...rest, type: 'device', values: { [point]: value } };
+  }
+  if (node.type === 'toggle') {
+    const { point, ...rest } = node;
+    return { ...rest, type: 'device', values: {}, toggle: point };
+  }
+  return node;
 }
 
-function showValue(ui, deviceId, key, value) {
-  const device = ui.devices.get(deviceId);
-  const spec = device ? ui.point(device, key) : null;
-  return ui.formatValue({ ...(spec ?? {}), value });
+function specOf(ui, target) {
+  const device = ui.devices.get(target.device);
+  return device ? ui.point(device, target.point) : null;
 }
 
 function describeRule(ui, rule) {
   switch (rule.kind) {
-    case 'state': {
-      const ops = { eq: '=', ne: '≠', gt: '>', ge: '≥', lt: '<', le: '≤' };
-      return `${pointName(ui, rule.device, rule.point)} ${ops[rule.op ?? 'eq']} ${showValue(ui, rule.device, rule.point, rule.value)}`;
-    }
+    case 'state': return conditionTitle(ui, rule);
     case 'time': {
       const window = [rule.after ? `après ${rule.after}` : '', rule.before ? `avant ${rule.before}` : ''].filter(Boolean).join(' et ');
       return `${window || 'toute la journée'}, ${describeDays(rule.days)}`;
@@ -92,19 +104,25 @@ function describeRule(ui, rule) {
   }
 }
 
+// The sentence a device step reads as, used as its title; null for other steps.
+function headline(ui, step) {
+  switch (step.type) {
+    case 'when_state': return eventTitle(ui, step);
+    case 'when_threshold': return thresholdTitle(ui, step);
+    case 'device': return ui.devices.get(step.device)?.name ?? `${step.device} (introuvable)`;
+    default: return null;
+  }
+}
+
 function describeStep(ui, step, scenes) {
   switch (step.type) {
     case 'when_state': {
-      const parts = [pointName(ui, step.device, step.point)];
-      if (step.from !== undefined && step.from !== null) parts.push(`de ${showValue(ui, step.device, step.point, step.from)}`);
-      if (step.to !== undefined && step.to !== null) parts.push(`à ${showValue(ui, step.device, step.point, step.to)}`);
-      if (step.for_s) parts.push(`pendant ${duration(step.for_s)}`);
-      return parts.join(' ');
+      const parts = [];
+      if (step.from !== undefined && step.from !== null) parts.push(`seulement depuis « ${valueText(ui, specOf(ui, step), step.from)} »`);
+      if (step.for_s) parts.push(`et le reste ${duration(step.for_s)}`);
+      return parts.join(', ');
     }
-    case 'when_threshold': {
-      const limits = [step.above != null ? `> ${step.above}` : '', step.below != null ? `< ${step.below}` : ''].filter(Boolean).join(' ou ');
-      return `${pointName(ui, step.device, step.point)} ${limits}${step.for_s ? ` pendant ${duration(step.for_s)}` : ''}`;
-    }
+    case 'when_threshold': return step.for_s ? `et y reste ${duration(step.for_s)}` : '';
     case 'at_time': return `${step.at}, ${describeDays(step.days)}`;
     case 'at_sun': {
       const offset = step.offset_min ? ` ${step.offset_min > 0 ? '+' : '−'}${Math.abs(step.offset_min)} min` : '';
@@ -117,8 +135,7 @@ function describeStep(ui, step, scenes) {
     case 'if': return step.rules.map((rule) => describeRule(ui, rule)).join(step.all === false ? ' ou ' : ' et ') || 'aucune règle';
     case 'wait': return duration(step.seconds);
     case 'wait_for': return `${describeRule(ui, step.rule)} (au plus ${duration(step.timeout_s)})`;
-    case 'set': return `${pointName(ui, step.device, step.point)} → ${showValue(ui, step.device, step.point, step.value)}`;
-    case 'toggle': return pointName(ui, step.device, step.point);
+    case 'device': return settingWords(ui, step).join(' · ') || 'rien à changer';
     case 'scene': return `« ${scenes.find((scene) => scene.id === step.scene)?.name ?? '?'} »`;
     case 'lights_off': return 'Toutes les lampes allumées';
     default: return step.type;
@@ -126,7 +143,7 @@ function describeStep(ui, step, scenes) {
 }
 
 function sentence(ui, automation, scenes) {
-  const triggers = automation.graph.nodes.filter(isTrigger).map((node) => describeStep(ui, node, scenes));
+  const triggers = automation.graph.nodes.filter(isTrigger).map((node) => headline(ui, node) ?? describeStep(ui, node, scenes));
   const actions = automation.graph.nodes.filter((node) => !isTrigger(node)).length;
   return `${triggers.join(' · ') || 'Aucun déclencheur'} → ${actions} étape${actions > 1 ? 's' : ''}`;
 }
@@ -140,11 +157,26 @@ function ago(ms) {
   return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
 
-// Devices with points matching `filter`, for the pickers.
-function choices(ui, filter) {
-  return [...ui.devices.values()].sort(ui.byRoomThenName).flatMap((device) => device.points
-    .filter((spec) => filter(spec, device))
-    .map((spec) => ({ device, spec })));
+// The first device offering a choice, preferring one that `prefer` likes: the step's
+// device plus the choice's fields.
+function firstChoice(ui, choicesFor, prefer = () => true) {
+  const devices = [...ui.devices.values()].sort(ui.byRoomThenName);
+  for (const pass of [prefer, () => true]) {
+    for (const device of devices) {
+      const choice = choicesFor(device).find((option) => pass(option, device));
+      if (choice) return withChoice({ device: device.id }, choice);
+    }
+  }
+  return { device: '', point: '' };
+}
+
+// `target` set to `choice`, keeping its value when it still suits the point.
+function withChoice(target, choice) {
+  const samePoint = target.point === choice.patch.point;
+  Object.assign(target, choice.patch);
+  for (const [key, value] of Object.entries(target)) if (value === undefined) delete target[key];
+  if (choice.valueField && !(samePoint && fits(choice.spec, target[choice.valueField]))) target[choice.valueField] = defaultValue(choice.spec);
+  return target;
 }
 
 function defaultValue(spec) {
@@ -159,16 +191,12 @@ function defaultValue(spec) {
 }
 
 function newStep(ui, type, scenes) {
-  const first = (filter) => choices(ui, filter)[0];
-  const writable = (spec) => spec.access === 'read_write';
   switch (type) {
-    case 'when_state': {
-      const pick = first((spec) => spec.kind.type === 'binary') ?? first(() => true);
-      return { type, device: pick?.device.id ?? '', point: pick?.spec.key ?? '', to: pick ? defaultValue(pick.spec) : true, for_s: 0 };
-    }
+    case 'when_state': return { type, ...firstChoice(ui, eventChoices, (option) => option.patch.to === true), for_s: 0 };
     case 'when_threshold': {
-      const pick = first((spec) => spec.kind.type === 'numeric');
-      return { type, device: pick?.device.id ?? '', point: pick?.spec.key ?? '', above: pick?.spec.value ?? 0, for_s: 0 };
+      const step = { type, ...firstChoice(ui, measureChoices), for_s: 0 };
+      step.above = Math.round(specOf(ui, step)?.value ?? 0);
+      return step;
     }
     case 'at_time': return { type, at: '07:00', days: [] };
     case 'at_sun': return { type, event: 'sunset', offset_min: 0, days: [] };
@@ -177,13 +205,11 @@ function newStep(ui, type, scenes) {
     case 'if': return { type, all: true, rules: [{ kind: 'presence', is: 'someone' }] };
     case 'wait': return { type, seconds: 60 };
     case 'wait_for': return { type, rule: { kind: 'presence', is: 'nobody' }, timeout_s: 600 };
-    case 'set': {
-      const pick = first((spec) => writable(spec) && spec.semantic === 'on_off') ?? first(writable);
-      return { type, device: pick?.device.id ?? '', point: pick?.spec.key ?? '', value: pick ? defaultValue(pick.spec) : true };
-    }
-    case 'toggle': {
-      const pick = first((spec) => writable(spec) && spec.kind.type === 'binary');
-      return { type, device: pick?.device.id ?? '', point: pick?.spec.key ?? '' };
+    case 'device': {
+      const devices = [...ui.devices.values()].sort(ui.byRoomThenName);
+      const device = devices.find(ui.isLight) ?? devices.find((candidate) => candidate.points.some(isWritable));
+      const on = device?.points.find((spec) => spec.semantic === 'on_off' && isWritable(spec));
+      return { type, device: device?.id ?? '', values: on ? { [on.key]: true } : {} };
     }
     case 'scene': return { type, scene: scenes[0]?.id ?? '' };
     default: return { type };
@@ -346,6 +372,7 @@ function editorPage(ui, id) {
       mode: 'restart',
       graph: { nodes: [{ id: 't', ...newStep(ui, 'manual', doc.scenes), x: 40, y: 80 }], edges: [] },
     });
+    automation.graph.nodes = automation.graph.nodes.map(upgradeStep);
     const runs = status.runs.filter((run) => run.automation === automation.id);
     buildEditor(ui, root, doc, automation, runs);
   })();
@@ -451,8 +478,8 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
         class: ['node', `group-${meta.group}`, state.selected?.node === node.id ? 'selected' : '', status ? `status-${status}` : ''].filter(Boolean).join(' '),
         'data-node': node.id,
       },
-      h('div', { class: 'node-title' }, meta.title),
-      h('div', { class: 'node-summary' }, describeStep(ui, node, doc.scenes)),
+      h('div', { class: 'node-title' }, headline(ui, node) ?? meta.title),
+      h('div', { class: 'node-summary' }, swatch(node), describeStep(ui, node, doc.scenes)),
       status ? h('span', { class: 'node-status' }, STATUS_LABELS[status] ?? status) : null);
       element.style.left = `${node.x}px`;
       element.style.top = `${node.y}px`;
@@ -468,6 +495,14 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
       world.append(element);
       nodeElements.set(node.id, element);
     }
+  }
+
+  function swatch(node) {
+    const shown = node.type === 'device' ? appearance(ui, node) : null;
+    if (!shown) return null;
+    const element = h('span', { class: 'swatch' });
+    element.style.background = shown;
+    return element;
   }
 
   function draw() {
@@ -672,13 +707,13 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
   function openPalette(at, link) {
     palette.hidden = false;
     const offered = (group) => Object.entries(STEPS)
-      .filter(([type, meta]) => meta.group === group && !(link && meta.group === 'trigger') && !(type === 'scene' && !doc.scenes.length));
+      .filter(([type, meta]) => meta.group === group && !meta.hidden && !(link && meta.group === 'trigger') && !(type === 'scene' && !doc.scenes.length));
     palette.replaceChildren(...Object.entries(GROUPS)
       .filter(([group]) => offered(group).length)
       .map(([group, title]) => h('div', { class: 'palette-group' },
         h('h4', {}, title),
         ...offered(group).map(([type, meta]) => {
-          const choice = h('button', { class: `palette-item group-${group}` }, meta.title);
+          const choice = h('button', { class: `palette-item group-${group}` }, h('strong', {}, meta.title), h('span', { class: 'meta' }, meta.hint));
           choice.addEventListener('click', () => {
             palette.hidden = true;
             addNode(type, at, link);
@@ -759,12 +794,25 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
   function valueInput(spec, value, onChange) {
     const kind = spec?.kind?.type ?? 'text';
     if (kind === 'binary') {
-      const select = h('select', {}, h('option', { value: 'true' }, ui.formatValue({ ...spec, value: true })), h('option', { value: 'false' }, ui.formatValue({ ...spec, value: false })));
+      const select = h('select', {}, h('option', { value: 'true' }, valueText(ui, spec, true)), h('option', { value: 'false' }, valueText(ui, spec, false)));
       select.value = String(value !== false);
       select.addEventListener('change', () => onChange(select.value === 'true'));
       return select;
     }
-    if (kind === 'numeric') return numberInput(value, (number) => onChange(number ?? 0), { min: spec.kind.min, max: spec.kind.max, step: spec.kind.step });
+    if (kind === 'numeric' && (spec.semantic === 'brightness' || spec.semantic === 'color_temperature')) {
+      const slider = h('input', { type: 'range', min: spec.kind.min, max: spec.kind.max, step: spec.kind.step || 1, value: value ?? spec.kind.min });
+      const shown = h('output', {}, valueText(ui, spec, Number(slider.value)));
+      slider.addEventListener('input', () => {
+        shown.textContent = valueText(ui, spec, Number(slider.value));
+        onChange(Number(slider.value));
+      });
+      return h('div', { class: 'slider-field' }, slider, shown);
+    }
+    if (kind === 'numeric') {
+      const unit = ui.formatValue({ ...spec, value: 0 }).replace(/^0\s*/, '');
+      const input = numberInput(value, (number) => onChange(number ?? 0), { min: spec.kind.min, max: spec.kind.max, step: spec.kind.step || 'any' });
+      return unit ? h('div', { class: 'duration' }, input, h('span', { class: 'meta' }, unit)) : input;
+    }
     if (kind === 'enum') {
       const select = h('select', {}, ...spec.kind.values.map((option) => h('option', { value: option }, option)));
       select.value = value ?? spec.kind.values[0];
@@ -785,33 +833,178 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
     return input;
   }
 
-  // Device and point of a step or rule, then its value fields when `withValue`.
-  function pointPicker(target, filter, onPick) {
-    const options = choices(ui, filter);
-    const select = h('select', {}, ...options.map(({ device, spec }, index) => h('option', { value: String(index) }, `${device.name} · ${spec.label}`)));
-    const current = options.findIndex(({ device, spec }) => device.id === target.device && spec.key === target.point);
-    if (current >= 0) select.value = String(current);
-    else if (target.device) select.prepend(h('option', { value: '', selected: true }, `${target.device} · ${target.point} (absent)`));
+  // The devices `offered` keeps, by room; `onPick(device)` when another one is chosen.
+  function deviceSelect(current, offered, onPick) {
+    const devices = [...ui.devices.values()].filter(offered).sort(ui.byRoomThenName);
+    const rooms = new Map();
+    for (const device of devices) {
+      const room = device.room ?? 'Sans pièce';
+      rooms.set(room, [...(rooms.get(room) ?? []), device]);
+    }
+    const select = h('select', {}, ...[...rooms].map(([room, list]) => h('optgroup', { label: room },
+      ...list.map((device) => h('option', { value: device.id }, device.name)))));
+    if (devices.some((device) => device.id === current)) select.value = current;
+    else select.prepend(h('option', { value: '', selected: true }, current ? `${current} (introuvable)` : 'Choisir…'));
     select.addEventListener('change', () => {
-      const pick = options[Number(select.value)];
-      if (!pick) return;
-      target.device = pick.device.id;
-      target.point = pick.spec.key;
-      onPick(pick.spec);
+      const next = ui.devices.get(select.value);
+      if (next) onPick(next);
     });
     return select;
   }
 
-  function specOf(target) {
-    const device = ui.devices.get(target.device);
-    return device ? ui.point(device, target.point) : null;
+  // The device, then what about it in plain words, then a value when that choice needs one.
+  // `choicesFor(device)` lists the choices, `keyOf(target, spec)` finds the current one.
+  function deviceFields(target, { choicesFor, keyOf, what, valueLabel = 'Valeur' }, onChange) {
+    const box = h('div', { class: 'device-fields' });
+    const render = () => {
+      const device = ui.devices.get(target.device);
+      const options = device ? choicesFor(device) : [];
+      const picker = deviceSelect(target.device, (candidate) => choicesFor(candidate).length, (next) => {
+        target.device = next.id;
+        target.point = '';
+        withChoice(target, choicesFor(next)[0]);
+        onChange();
+        render();
+      });
+
+      const key = keyOf(target, specOf(ui, target));
+      const whatSelect = h('select', {}, ...options.map((option) => h('option', { value: option.key }, option.label)));
+      const chosen = options.find((option) => option.key === key);
+      if (chosen) whatSelect.value = key;
+      else if (device) whatSelect.prepend(h('option', { value: '', selected: true }, `${target.point} (introuvable)`));
+      whatSelect.addEventListener('change', () => {
+        const option = options.find((candidate) => candidate.key === whatSelect.value);
+        if (!option) return;
+        withChoice(target, option);
+        onChange();
+        render();
+      });
+
+      const parts = [field('Appareil', picker)];
+      if (options.length) parts.push(field(what, whatSelect));
+      if (chosen?.valueField) {
+        parts.push(field(typeof valueLabel === 'function' ? valueLabel(chosen) : valueLabel,
+          valueInput(chosen.spec, target[chosen.valueField], (value) => { target[chosen.valueField] = value; onChange(); })));
+      }
+      box.replaceChildren(...parts);
+    };
+    render();
+    return box;
+  }
+
+  function segmented(options, current, onPick) {
+    return h('div', { class: 'segmented', role: 'group' }, ...options.map(([value, label]) => {
+      const button = h('button', { type: 'button', class: value === current ? 'active' : '', 'aria-pressed': String(value === current) }, label);
+      button.addEventListener('click', () => onPick(value));
+      return button;
+    }));
+  }
+
+  // The device as it should be once the step has run: each setting is « Inchangé » or the
+  // state wanted, as on its dashboard card.
+  function deviceCard(node, onChange) {
+    const box = h('div', { class: 'device-fields' });
+    node.values ??= {};
+    const render = () => {
+      const picker = deviceSelect(node.device, (device) => device.points.some(isWritable), (next) => {
+        node.device = next.id;
+        node.values = {};
+        delete node.toggle;
+        const on = next.points.find((spec) => spec.semantic === 'on_off' && isWritable(spec));
+        if (on) node.values[on.key] = true;
+        onChange();
+        render();
+      });
+      const device = ui.devices.get(node.device);
+      if (!device) {
+        box.replaceChildren(field('Appareil', picker));
+        return;
+      }
+      const specs = device.points.filter(isWritable);
+      const changedAndRedrawn = () => { onChange(); render(); };
+      const rows = [];
+
+      for (const spec of specs.filter((candidate) => kindOf(candidate) === 'binary')) {
+        const [on, off] = spec.semantic === 'on_off' ? ['Allumé', 'Éteint'] : ['Activé', 'Désactivé'];
+        let current = 'keep';
+        if (node.toggle === spec.key) current = 'toggle';
+        else if (spec.key in node.values) current = String(node.values[spec.key]);
+        rows.push(field(spec.label, segmented([['keep', 'Inchangé'], ['true', on], ['false', off], ['toggle', 'Inverser']], current, (pick) => {
+          delete node.values[spec.key];
+          if (node.toggle === spec.key) delete node.toggle;
+          // One inverted setting per step: it replaces any other.
+          if (pick === 'toggle') node.toggle = spec.key;
+          else if (pick !== 'keep') {
+            node.values[spec.key] = pick === 'true';
+          }
+          changedAndRedrawn();
+        })));
+      }
+
+      const color = specs.find((spec) => spec.semantic === 'color');
+      const white = specs.find((spec) => spec.semantic === 'color_temperature');
+      for (const spec of specs.filter((candidate) => kindOf(candidate) !== 'binary' && candidate !== color && candidate !== white)) {
+        const set = spec.key in node.values;
+        const pick = segmented([['keep', 'Inchangé'], ['set', 'Régler']], set ? 'set' : 'keep', (choice) => {
+          if (choice === 'set') node.values[spec.key] = fits(spec, spec.value) ? spec.value : defaultValue(spec);
+          else delete node.values[spec.key];
+          changedAndRedrawn();
+        });
+        rows.push(field(spec.label, h('div', { class: 'device-fields' }, pick,
+          set ? valueInput(spec, node.values[spec.key], (value) => { node.values[spec.key] = value; onChange(); }) : null)));
+      }
+
+      if (color || white) {
+        let current = 'keep';
+        if (color && color.key in node.values) current = 'color';
+        else if (white && white.key in node.values) current = 'white';
+        const shades = [['keep', 'Inchangée'], ...(color ? [['color', 'Couleur']] : []), ...(white ? [['white', 'Blanc']] : [])];
+        const parts = [segmented(shades, current, (pick) => {
+          if (color) delete node.values[color.key];
+          if (white) delete node.values[white.key];
+          if (pick === 'color') node.values[color.key] = color.value ?? { r: 255, g: 180, b: 80 };
+          if (pick === 'white') node.values[white.key] = Math.round(white.value ?? Math.min(Math.max(2700, white.kind.min), white.kind.max));
+          changedAndRedrawn();
+        })];
+        const shown = { color, white }[current];
+        if (shown) parts.push(valueInput(shown, node.values[shown.key], (value) => { node.values[shown.key] = value; onChange(); }));
+        rows.push(field(color ? 'Teinte' : 'Blanc', h('div', { class: 'device-fields' }, ...parts)));
+      }
+
+      const capture = h('button', { type: 'button', class: 'pill' }, 'Reprendre son état actuel');
+      capture.addEventListener('click', () => {
+        node.values = currentState(device);
+        delete node.toggle;
+        changedAndRedrawn();
+      });
+      const nothing = !Object.keys(node.values).length && !node.toggle;
+      box.replaceChildren(field('Appareil', picker),
+        h('div', { class: 'device-card' }, h('p', { class: 'meta' }, 'Après cette étape :'), ...rows,
+          nothing ? h('p', { class: 'form-error' }, 'Rien à changer : choisis au moins un réglage.') : null),
+        capture);
+    };
+    render();
+    return box;
+  }
+
+  // What the device shows now, as a scene would record it: a switched-off lamp only says so,
+  // and its shade follows its colour mode.
+  function currentState(device) {
+    const specs = device.points.filter(isWritable).filter((spec) => spec.value !== null && spec.value !== undefined);
+    const on = specs.find((spec) => spec.semantic === 'on_off');
+    if (on?.value === false && ui.isLight(device)) return { [on.key]: false };
+    const mode = device.points.find((spec) => spec.semantic === 'color_mode')?.value;
+    const hasColor = specs.some((spec) => spec.semantic === 'color');
+    const skipped = (spec) => (spec.semantic === 'color' && mode === 'white')
+      || (spec.semantic === 'color_temperature' && (mode ? mode !== 'white' : hasColor));
+    return Object.fromEntries(specs.filter((spec) => !skipped(spec)).map((spec) => [spec.key, spec.value]));
   }
 
   function ruleEditor(rule, onChange) {
     const box = h('div', { class: 'rule' });
     const render = () => {
       const kind = h('select', {},
-        h('option', { value: 'state' }, 'Valeur d’un appareil'),
+        h('option', { value: 'state' }, 'État d’un appareil'),
         h('option', { value: 'time' }, 'Plage horaire'),
         h('option', { value: 'sun' }, 'Jour ou nuit'),
         h('option', { value: 'presence' }, 'Présence'));
@@ -820,22 +1013,13 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
         const fresh = { state: { kind: 'state', op: 'eq' }, time: { kind: 'time', after: '22:00', before: '07:00', days: [] }, sun: { kind: 'sun', is: 'night' }, presence: { kind: 'presence', is: 'someone' } }[kind.value];
         for (const key of Object.keys(rule)) delete rule[key];
         Object.assign(rule, fresh);
-        if (rule.kind === 'state') {
-          const pick = choices(ui, () => true)[0];
-          rule.device = pick?.device.id ?? '';
-          rule.point = pick?.spec.key ?? '';
-          rule.value = pick ? defaultValue(pick.spec) : true;
-        }
+        if (rule.kind === 'state') Object.assign(rule, firstChoice(ui, conditionChoices));
         onChange();
         render();
       });
       const parts = [kind];
       if (rule.kind === 'state') {
-        const op = h('select', {}, ...[['eq', '='], ['ne', '≠'], ['gt', '>'], ['ge', '≥'], ['lt', '<'], ['le', '≤']].map(([value, label]) => h('option', { value }, label)));
-        op.value = rule.op ?? 'eq';
-        op.addEventListener('change', () => { rule.op = op.value; onChange(); });
-        parts.push(pointPicker(rule, () => true, (spec) => { rule.value = defaultValue(spec); onChange(); render(); }), op,
-          valueInput(specOf(rule), rule.value, (value) => { rule.value = value; onChange(); }));
+        parts.push(deviceFields(rule, { choicesFor: conditionChoices, keyOf: conditionKey, what: 'Condition' }, onChange));
       } else if (rule.kind === 'time') {
         const after = h('input', { type: 'time', value: rule.after ?? '' });
         const before = h('input', { type: 'time', value: rule.before ?? '' });
@@ -881,32 +1065,38 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
     }
     const meta = STEPS[node.type];
     const fields = [];
-    const writable = (spec) => spec.access === 'read_write';
     switch (node.type) {
       case 'when_state': {
-        const any = h('input', { type: 'checkbox', checked: node.to === undefined || node.to === null });
-        const toBox = h('div');
-        const fromBox = h('div');
-        const anyFrom = h('input', { type: 'checkbox', checked: node.from === undefined || node.from === null });
-        const renderValues = () => {
-          toBox.replaceChildren(any.checked ? h('span', { class: 'meta' }, 'n’importe quelle valeur') : valueInput(specOf(node), node.to, (value) => { node.to = value; changed(); }));
-          fromBox.replaceChildren(anyFrom.checked ? h('span', { class: 'meta' }, 'n’importe quelle valeur') : valueInput(specOf(node), node.from, (value) => { node.from = value; changed(); }));
+        const cleaned = () => {
+          if (node.from !== undefined && node.from !== null && !fits(specOf(ui, node), node.from)) delete node.from;
+          changed();
         };
-        any.addEventListener('change', () => { node.to = any.checked ? null : defaultValue(specOf(node)); changed(); renderValues(); });
-        anyFrom.addEventListener('change', () => { node.from = anyFrom.checked ? null : defaultValue(specOf(node)); changed(); renderValues(); });
-        renderValues();
-        fields.push(field('Appareil', pointPicker(node, () => true, () => { node.to = null; node.from = null; any.checked = true; anyFrom.checked = true; changed(); renderValues(); })),
-          h('label', { class: 'check' }, any, 'Toute nouvelle valeur'), field('Devient', toBox),
-          h('label', { class: 'check' }, anyFrom, 'Depuis n’importe quelle valeur'), field('Était', fromBox),
-          field('Pendant au moins', durationInput(node.for_s ?? 0, (seconds) => { node.for_s = seconds; changed(); })));
+        fields.push(deviceFields(node, { choicesFor: eventChoices, keyOf: eventKey, what: 'Quand', valueLabel: 'Nouvelle valeur' }, cleaned));
+        if (node.from !== undefined && node.from !== null) {
+          const drop = h('button', { class: 'ghost' }, 'Retirer');
+          drop.addEventListener('click', () => { delete node.from; changed(); drawInspector(); });
+          fields.push(h('p', { class: 'meta' }, `Seulement si avant, c’était « ${valueText(ui, specOf(ui, node), node.from)} ». `, drop));
+        }
+        fields.push(field('Et le reste au moins (0 : tout de suite)', durationInput(node.for_s ?? 0, (seconds) => { node.for_s = seconds; changed(); })));
         break;
       }
-      case 'when_threshold':
-        fields.push(field('Appareil', pointPicker(node, (spec) => spec.kind.type === 'numeric', changed)),
-          field('Au-dessus de', numberInput(node.above, (value) => { node.above = value; changed(); }, { step: 'any' })),
-          field('En dessous de', numberInput(node.below, (value) => { node.below = value; changed(); }, { step: 'any' })),
-          field('Pendant au moins', durationInput(node.for_s ?? 0, (seconds) => { node.for_s = seconds; changed(); })));
+      case 'when_threshold': {
+        const limits = h('div', { class: 'device-fields' });
+        const renderLimits = () => {
+          const spec = specOf(ui, node);
+          const unit = spec ? ui.formatValue({ ...spec, value: 0 }).replace(/^0\s*/, '') : '';
+          const limit = (key) => {
+            const input = numberInput(node[key], (value) => { node[key] = value; changed(); }, { step: 'any', placeholder: 'pas de seuil' });
+            return unit ? h('div', { class: 'duration' }, input, h('span', { class: 'meta' }, unit)) : input;
+          };
+          limits.replaceChildren(field('Quand elle passe au-dessus de', limit('above')), field('Ou quand elle passe en dessous de', limit('below')));
+        };
+        renderLimits();
+        fields.push(deviceFields(node, { choicesFor: measureChoices, keyOf: (step) => step.point, what: 'Mesure' }, () => { changed(); renderLimits(); }),
+          limits,
+          field('Et y reste au moins (0 : tout de suite)', durationInput(node.for_s ?? 0, (seconds) => { node.for_s = seconds; changed(); })));
         break;
+      }
       case 'at_time': {
         const at = h('input', { type: 'time', value: node.at });
         at.addEventListener('input', () => { node.at = at.value; changed(); });
@@ -958,15 +1148,8 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
         fields.push(ruleEditor(node.rule, changed),
           field('Au plus', durationInput(node.timeout_s, (seconds) => { node.timeout_s = seconds; changed(); })));
         break;
-      case 'set': {
-        const valueBox = h('div');
-        const renderValue = () => valueBox.replaceChildren(valueInput(specOf(node), node.value, (value) => { node.value = value; changed(); }));
-        renderValue();
-        fields.push(field('Appareil', pointPicker(node, writable, (spec) => { node.value = defaultValue(spec); changed(); renderValue(); })), field('Valeur', valueBox));
-        break;
-      }
-      case 'toggle':
-        fields.push(field('Appareil', pointPicker(node, (spec) => writable(spec) && spec.kind.type === 'binary', changed)));
+      case 'device':
+        fields.push(deviceCard(node, changed));
         break;
       case 'scene': {
         const scene = h('select', {}, ...doc.scenes.map((option) => h('option', { value: option.id }, option.name)));
@@ -993,10 +1176,16 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
     history.replaceChildren(h('h3', {}, 'Exécutions'),
       runs.length
         ? h('ul', { class: 'item-list runs' }, ...runs.slice(0, 15).map((run) => {
-          const steps = h('ol', { class: 'run-steps', hidden: true }, ...run.steps.map((step) => h('li', {},
-            h('span', { class: `run-badge step-${step.status}` }, STATUS_LABELS[step.status] ?? step.status),
-            ` ${STEPS[nodeById(step.node)?.type]?.title ?? step.node}`,
-            step.detail ? h('span', { class: 'meta' }, ` — ${step.detail}`) : null)));
+          const steps = h('ol', { class: 'run-steps', hidden: true }, ...run.steps.map((step) => {
+            const node = nodeById(step.node);
+            const title = node ? headline(ui, node) : null;
+            // A device step's sentence already says what the detail would.
+            const detail = step.detail && (!title || step.status === 'failed') ? step.detail : '';
+            return h('li', {},
+              h('span', { class: `run-badge step-${step.status}` }, STATUS_LABELS[step.status] ?? step.status),
+              ` ${title ?? STEPS[node?.type]?.title ?? step.node}`,
+              detail ? h('span', { class: 'meta' }, ` — ${detail}`) : null);
+          }));
           const toggle = h('button', { class: 'ghost' }, `${new Date(run.started).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'medium' })} · ${run.dry ? 'essai' : run.why} · ${RUN_LABELS[run.status]}`);
           toggle.addEventListener('click', () => { steps.hidden = !steps.hidden; showRun(run); });
           return h('li', { class: `run-${run.status}` }, toggle, steps);

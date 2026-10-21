@@ -31,6 +31,11 @@ const ASSETS: &[Asset] = &[
         body: include_bytes!("../web/automations.js"),
     },
     Asset {
+        path: "/device-words.js",
+        mime: "text/javascript; charset=utf-8",
+        body: include_bytes!("../web/device-words.js"),
+    },
+    Asset {
         path: "/style.css",
         mime: "text/css; charset=utf-8",
         body: include_bytes!("../web/style.css"),

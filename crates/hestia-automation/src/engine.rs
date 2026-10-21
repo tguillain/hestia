@@ -15,7 +15,7 @@ use tokio::time::{self, Instant, MissedTickBehavior};
 
 use crate::Automations;
 use crate::model::{Location, PresenceEvent, Step, SunEvent, parse_time};
-use crate::run::show;
+use crate::run::describe;
 use crate::sun::sunrise_sunset;
 
 const CLOCK_CHECK: Duration = Duration::from_secs(1);
@@ -181,11 +181,7 @@ fn on_change(
                 }
                 continue;
             }
-            let why = format!(
-                "{} : {}",
-                point_label(automations, &key.0, &key.1),
-                show(value)
-            );
+            let why = describe(automations, &key.0, &key.1, value);
             if for_s == 0 {
                 automations.fire(&automation.id, &node.id, why);
                 continue;
@@ -304,20 +300,6 @@ fn snapshot(devices: &[DeviceSnapshot]) -> HashMap<PointKey, Value> {
             })
         })
         .collect()
-}
-
-fn point_label(automations: &Automations, device: &DeviceId, point: &str) -> String {
-    automations.hub.device(device).map_or_else(
-        || format!("{device} · {point}"),
-        |snapshot| {
-            let label = snapshot
-                .points
-                .iter()
-                .find(|candidate| candidate.spec.key == point)
-                .map_or(point, |candidate| candidate.spec.label.as_str());
-            format!("{} · {label}", snapshot.name)
-        },
-    )
 }
 
 fn is_presence(hub: &Hub, device: &DeviceId, point: &str) -> bool {

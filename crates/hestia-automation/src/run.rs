@@ -3,7 +3,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use hestia_core::{Command, Origin, Semantic, Value};
+use std::collections::BTreeMap;
+
+use hestia_core::{Command, DeviceId, Origin, PointSpec, Semantic, Value};
 use jiff::Zoned;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -132,6 +134,11 @@ async fn step(automations: &Arc<Automations>, step: &Step, dry: bool) -> Outcome
             (StepStatus::Done, String::new(), Some("out"))
         }
         Step::WaitFor { rule, timeout_s } => wait_for(automations, rule, *timeout_s, dry).await,
+        Step::Device {
+            device,
+            values,
+            toggle,
+        } => settle(automations, device, values, toggle.as_deref(), dry).await,
         Step::Set {
             device,
             point,
@@ -229,6 +236,61 @@ async fn wait_for(automations: &Automations, rule: &Rule, timeout_s: u32, dry: b
     }
 }
 
+/// Brings a device to the state a « Régler un appareil » step describes; a refused command
+/// stops the branch.
+async fn settle(
+    automations: &Automations,
+    device: &DeviceId,
+    values: &BTreeMap<String, Value>,
+    toggle: Option<&str>,
+    dry: bool,
+) -> Outcome {
+    let mut writes: Vec<(String, Value)> = values
+        .iter()
+        .map(|(point, value)| (point.clone(), value.clone()))
+        .collect();
+    if let Some(point) = toggle {
+        let Some(Value::Bool(current)) = automations.hub.value(device, point) else {
+            return (
+                StepStatus::Failed,
+                format!("{} : état inconnu", label(automations, device, point)),
+                None,
+            );
+        };
+        writes.push((point.to_owned(), Value::Bool(!current)));
+    }
+    let on_off = |point: &str| {
+        lookup(automations, device, point)
+            .1
+            .is_some_and(|spec| spec.semantic == Semantic::OnOff)
+    };
+    // Switched on before brightness and colour, switched off after them.
+    writes.sort_by_key(|(point, value)| match value {
+        Value::Bool(true) if on_off(point) => 0,
+        Value::Bool(false) if on_off(point) => 2,
+        _ => 1,
+    });
+    let detail = describe_all(automations, device, &writes);
+    if dry {
+        return (StepStatus::Simulated, detail, Some("out"));
+    }
+    for (point, value) in writes {
+        let command = Command {
+            device: device.clone(),
+            point,
+            value,
+        };
+        if let Err(error) = automations.hub.command(command, Origin::Automation).await {
+            return (
+                StepStatus::Failed,
+                clip(&format!("{detail} : {error}")),
+                None,
+            );
+        }
+    }
+    (StepStatus::Done, detail, Some("out"))
+}
+
 /// Sets a point; a refused command stops the branch.
 async fn write(
     automations: &Automations,
@@ -237,7 +299,7 @@ async fn write(
     value: Value,
     dry: bool,
 ) -> Outcome {
-    let detail = format!("{} → {}", label(automations, device, point), show(&value));
+    let detail = describe(automations, device, point, &value);
     if dry {
         return (StepStatus::Simulated, detail, Some("out"));
     }
@@ -342,18 +404,67 @@ pub(crate) fn within(now: &Zoned, after: Option<&str>, before: Option<&str>, day
     }
 }
 
-fn label(automations: &Automations, device: &hestia_core::DeviceId, point: &str) -> String {
+fn label(automations: &Automations, device: &DeviceId, point: &str) -> String {
+    let (name, spec) = lookup(automations, device, point);
+    format!("{name} · {}", spec.as_ref().map_or(point, |spec| spec.label.as_str()))
+}
+
+/// « Chambre : allumé », « Chambre : Luminosité 40 % ».
+pub(crate) fn describe(
+    automations: &Automations,
+    device: &DeviceId,
+    point: &str,
+    value: &Value,
+) -> String {
+    describe_all(automations, device, &[(point.to_owned(), value.clone())])
+}
+
+/// « Chambre : allumé, Luminosité 40 %, Couleur #ffb450 ».
+fn describe_all(automations: &Automations, device: &DeviceId, writes: &[(String, Value)]) -> String {
+    let name = lookup(automations, device, "").0;
+    let parts: Vec<String> = writes
+        .iter()
+        .map(|(point, value)| setting(lookup(automations, device, point).1.as_ref(), point, value))
+        .collect();
+    format!("{name} : {}", parts.join(", "))
+}
+
+/// The device's name and the point's description, when known.
+fn lookup(automations: &Automations, device: &DeviceId, point: &str) -> (String, Option<PointSpec>) {
     match automations.hub.device(device) {
         Some(snapshot) => {
-            let point_label = snapshot
+            let spec = snapshot
                 .points
                 .iter()
                 .find(|candidate| candidate.spec.key == point)
-                .map_or(point, |candidate| candidate.spec.label.as_str());
-            format!("{} · {point_label}", snapshot.name)
+                .map(|candidate| candidate.spec.clone());
+            (snapshot.name.clone(), spec)
         }
-        None => format!("{device} · {point}"),
+        None => (device.to_string(), None),
     }
+}
+
+fn setting(spec: Option<&PointSpec>, point: &str, value: &Value) -> String {
+    if let (Value::Bool(on), Some(spec)) = (value, spec)
+        && let Some(word) = state_word(spec.semantic, *on)
+    {
+        return word.to_owned();
+    }
+    let label = spec.map_or(point, |spec| spec.label.as_str());
+    match spec.and_then(|spec| spec.unit) {
+        Some(unit) => format!("{label} {} {}", show(value), unit.symbol()),
+        None => format!("{label} {}", show(value)),
+    }
+}
+
+fn state_word(semantic: Semantic, on: bool) -> Option<&'static str> {
+    let (yes, no) = match semantic {
+        Semantic::OnOff => ("allumé", "éteint"),
+        Semantic::Connectivity => ("en ligne", "hors ligne"),
+        Semantic::Presence => ("à la maison", "absent"),
+        _ => return None,
+    };
+    Some(if on { yes } else { no })
 }
 
 /// A value as the household reads it.

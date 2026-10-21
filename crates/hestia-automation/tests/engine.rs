@@ -106,6 +106,8 @@ fn automation(value: serde_json::Value) -> Automation {
     serde_json::from_value(value).unwrap()
 }
 
+// One house for the whole story: each part depends on the state the previous one left.
+#[allow(clippy::too_many_lines)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn graphs_command_the_house() {
     let hub = Hub::new(HashMap::new());
@@ -206,6 +208,30 @@ async fn graphs_command_the_house() {
         "the first run was cancelled"
     );
     assert_eq!(runs[0].status, RunStatus::Running, "the second one waits");
+
+    // « Régler un appareil »: the lamp as it should be, switched on before its brightness.
+    let card = automation(serde_json::json!({
+        "name": "Lecture", "enabled": false,
+        "graph": {
+            "nodes": [
+                {"id": "t", "type": "manual"},
+                {"id": "d", "type": "device", "device": "house:lamp", "values": {"brightness": 30, "on": true}},
+                {"id": "f", "type": "device", "device": "house:pc", "toggle": "online"}
+            ],
+            "edges": [{"from": "t", "to": "d"}, {"from": "d", "to": "f"}]
+        }
+    }));
+    let trial = automations.test(card.clone()).await.unwrap();
+    assert_eq!(trial.steps[1].detail, "Lampe : allumé, Luminosité 30");
+    assert_eq!(trial.steps[2].detail, "PC : hors ligne", "the computer is online: inverted");
+    let mut document = automations.document();
+    document.automations.push(card);
+    let saved = automations.replace(document).unwrap();
+    set(&hub, "house:lamp", "on", false).await;
+    automations.run_now(&saved.automations[3].id).unwrap();
+    wait_for(&hub, "house:pc", "online", false).await;
+    assert_eq!(hub.value(&id("house:lamp"), "on"), Some(Value::Bool(true)));
+    assert_eq!(hub.value(&id("house:lamp"), "brightness"), Some(Value::Number(30.0)));
 
     assert!(dir.join("automations.json").exists());
     assert!(

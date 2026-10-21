@@ -498,7 +498,8 @@ a.ghost, a.brand { color: inherit; text-decoration: none; }
 .palette[hidden] { display: none; }
 .palette-group { display: grid; gap: 4px; margin-bottom: 10px; }
 .palette-group h4 { margin: 4px 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.palette-item { text-align: left; border: 1px solid var(--border); border-left: 4px solid var(--muted); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); cursor: pointer; }
+.palette-item { display: grid; gap: 2px; text-align: left; border: 1px solid var(--border); border-left: 4px solid var(--muted); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); cursor: pointer; color: inherit; font: inherit; }
+.palette-item .meta { font-size: 12px; }
 .palette-item.group-trigger { border-left-color: var(--accent); }
 .palette-item.group-logic { border-left-color: #6d7cff; }
 .palette-item.group-action { border-left-color: var(--ok); }
@@ -510,6 +511,18 @@ a.ghost, a.brand { color: inherit; text-decoration: none; }
 .duration { display: flex; gap: 6px; }
 .duration input { width: 90px; }
 .rule, .rules { display: grid; gap: 6px; }
+.device-fields { display: grid; gap: 8px; min-width: 0; }
+.inspector, .inspector * { min-width: 0; }
+.inspector select { width: 100%; max-width: 100%; text-overflow: ellipsis; }
+.device-card { display: grid; gap: 10px; padding: 10px; border-radius: 12px; background: var(--surface-2); }
+.device-card > .meta { margin: 0; }
+.segmented { display: flex; flex-wrap: wrap; gap: 4px; }
+.segmented button { flex: 1 1 auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--surface); color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.segmented button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.slider-field { display: flex; align-items: center; gap: 8px; }
+.slider-field input { flex: 1; }
+.slider-field output { min-width: 92px; font-size: 13px; }
+.node-summary .swatch { width: 12px; height: 12px; border: 1px solid var(--border); }
 .rule-row { display: grid; gap: 6px; padding: 8px; border-radius: 10px; background: var(--surface-2); }
 .run-history[hidden] { display: none; }
 .runs li { display: grid !important; gap: 6px; }

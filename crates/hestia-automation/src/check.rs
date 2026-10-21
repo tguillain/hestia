@@ -137,6 +137,15 @@ fn check_step(document: &Document, step: &Step) -> Result<(), String> {
             }
             Ok(())
         }
+        Step::Device { values, toggle, .. } => {
+            if values.is_empty() && toggle.is_none() {
+                return Err("une étape « Régler un appareil » ne change rien".to_owned());
+            }
+            if toggle.as_ref().is_some_and(|point| values.contains_key(point)) {
+                return Err("un réglage à la fois inversé et fixé".to_owned());
+            }
+            Ok(())
+        }
         Step::OnStart
         | Step::Manual
         | Step::Presence { .. }
@@ -304,6 +313,11 @@ mod tests {
                 serde_json::json!([{"id": "t", "type": "when_threshold", "device": "x:y", "point": "t"}]),
                 serde_json::json!([]),
                 "seuil",
+            ),
+            (
+                serde_json::json!([{"id": "t", "type": "manual"}, {"id": "d", "type": "device", "device": "x:y"}]),
+                serde_json::json!([{"from": "t", "to": "d"}]),
+                "ne change rien",
             ),
         ];
         for (nodes, edges, expected) in cases {

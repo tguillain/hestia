@@ -4,6 +4,8 @@
 //! leaves a node by one of its ports (`out`, or `yes`/`no` after a condition) and enters
 //! the next node.
 
+use std::collections::BTreeMap;
+
 use hestia_core::{DeviceId, Value};
 use serde::{Deserialize, Serialize};
 
@@ -174,6 +176,17 @@ pub enum Step {
     },
 
     // ---- Actions
+    /// The device as it should be afterwards: each listed point is set (a switch turned on
+    /// first, turned off last), points left out keep their state. `toggle` inverts an
+    /// on/off point instead.
+    Device {
+        device: DeviceId,
+        #[serde(default)]
+        values: BTreeMap<String, Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        toggle: Option<String>,
+    },
+    /// One point, as the first version of the editor wrote it.
     Set {
         device: DeviceId,
         point: String,
