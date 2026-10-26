@@ -137,7 +137,7 @@ impl GoveeDriver {
         bytes: &[u8],
         from: SocketAddr,
     ) {
-        match protocol::parse(bytes) {
+        match protocol::parse(bytes, from.ip()) {
             Some(Incoming::Scan(reply)) => {
                 self.remember(known, &reply);
                 self.on_scan(ctx, socket, lamps, reply).await;
