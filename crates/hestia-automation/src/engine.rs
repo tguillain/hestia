@@ -63,9 +63,11 @@ pub(crate) async fn run(automations: Arc<Automations>) {
                         } else {
                             home.remove(&device);
                         }
-                        let event = match (before, !home.is_empty()) {
-                            (false, true) => Some(PresenceEvent::FirstArrival),
-                            (true, false) => Some(PresenceEvent::LastDeparture),
+                        // As for the other triggers, the first value seen is not a change:
+                        // at start-up the phones already home must not count as an arrival.
+                        let event = match (previous.is_some(), before, !home.is_empty()) {
+                            (true, false, true) => Some(PresenceEvent::FirstArrival),
+                            (true, true, false) => Some(PresenceEvent::LastDeparture),
                             _ => None,
                         };
                         if let Some(event) = event {

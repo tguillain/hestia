@@ -79,6 +79,38 @@ impl Driver for House {
     }
 }
 
+/// A phone declared first and seen home a moment later, as the Freebox does at start-up.
+struct LatePhone;
+
+impl Driver for LatePhone {
+    fn kind(&self) -> &'static str {
+        "phone"
+    }
+
+    fn run<'a>(&'a self, ctx: &'a mut DriverContext) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            let id = ctx.device_id("anna")?;
+            let spec = PointSpec::new("home", "À la maison", PointKind::Binary, Semantic::Presence);
+            ctx.upsert_device(DeviceInfo {
+                id: id.clone(),
+                name: "Anna".to_owned(),
+                manufacturer: None,
+                model: None,
+                points: vec![spec.writable()],
+            });
+            ctx.set_available(&id, true);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            ctx.set_state(&id, "home", Value::Bool(true));
+            loop {
+                let pending = ctx.next_command().await;
+                let command = pending.command().clone();
+                ctx.set_state(&command.device, &command.point, command.value);
+                pending.succeed();
+            }
+        })
+    }
+}
+
 fn id(raw: &str) -> DeviceId {
     raw.parse().unwrap()
 }
@@ -244,5 +276,47 @@ async fn graphs_command_the_house() {
         dir.join("automation-runs.jsonl").exists(),
         "finished runs are kept"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Hestia restarts while Anna is home: her phone showing up is not an arrival.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_restart_is_not_an_arrival() {
+    let hub = Hub::new(HashMap::new());
+    spawn_driver(&hub, "house", Arc::new(House));
+    wait_for(&hub, "house:thomas", "home", true).await;
+    set(&hub, "house:thomas", "home", false).await;
+    let dir = std::env::temp_dir().join(format!("hestia-arrival-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let automations = Automations::open(Arc::clone(&hub), &dir).unwrap();
+    let arrival = automation(serde_json::json!({
+        "name": "Arrivée", "enabled": true,
+        "graph": {
+            "nodes": [
+                {"id": "t", "type": "presence", "event": "first_arrival"},
+                {"id": "on", "type": "set", "device": "house:lamp", "point": "on", "value": true}
+            ],
+            "edges": [{"from": "t", "to": "on"}]
+        }
+    }));
+    automations
+        .replace(Document {
+            automations: vec![arrival],
+            ..Document::default()
+        })
+        .unwrap();
+    automations.spawn();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    spawn_driver(&hub, "phone", Arc::new(LatePhone));
+    wait_for(&hub, "phone:anna", "home", true).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(hub.value(&id("house:lamp"), "on"), Some(Value::Bool(false)));
+    assert_eq!(automations.runs(None, 10).len(), 0, "nothing ran");
+
+    // A real return still counts.
+    set(&hub, "phone:anna", "home", false).await;
+    set(&hub, "phone:anna", "home", true).await;
+    wait_for(&hub, "house:lamp", "on", true).await;
     let _ = std::fs::remove_dir_all(&dir);
 }
