@@ -30,7 +30,7 @@ pub async fn discover(config: &GoveeConfig, wait: Duration) -> anyhow::Result<Ve
         let Ok((length, from)) = received else {
             continue;
         };
-        match protocol::parse(&buffer[..length]) {
+        match protocol::parse(&buffer[..length], from.ip()) {
             Some(Incoming::Scan(reply)) => {
                 if let std::collections::btree_map::Entry::Vacant(e) = found.entry(reply.ip) {
                     send(&socket, reply.ip, config.control_port, Outgoing::Status).await;

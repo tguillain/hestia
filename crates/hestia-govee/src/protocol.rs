@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use hestia_core::Rgb;
 use serde::Deserialize;
@@ -6,11 +6,19 @@ use serde_json::json;
 
 pub const MULTICAST: Ipv4Addr = Ipv4Addr::new(239, 255, 255, 250);
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanReply {
     pub ip: Ipv4Addr,
     pub device: String,
     pub sku: String,
+}
+
+/// Some lamps (H6056, Wi-Fi firmware 1.00.16) leave `ip` out of their scan reply.
+#[derive(Deserialize)]
+struct RawScanReply {
+    ip: Option<Ipv4Addr>,
+    device: String,
+    sku: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -47,18 +55,30 @@ struct Message {
     data: serde_json::Value,
 }
 
-/// Decodes a datagram; anything unknown or malformed is `None`.
-pub fn parse(bytes: &[u8]) -> Option<Incoming> {
+/// Decodes a datagram received from `from`; anything unknown or malformed is `None`.
+pub fn parse(bytes: &[u8], from: IpAddr) -> Option<Incoming> {
     let envelope: Envelope = serde_json::from_slice(bytes).ok()?;
     match envelope.msg.cmd.as_str() {
-        "scan" => serde_json::from_value(envelope.msg.data)
-            .ok()
-            .map(Incoming::Scan),
+        "scan" => scan_reply(envelope.msg.data, from).map(Incoming::Scan),
         "devStatus" => serde_json::from_value(envelope.msg.data)
             .ok()
             .map(Incoming::Status),
         _ => None,
     }
+}
+
+/// The address the lamp announces wins; the sender's address stands in when it has none.
+fn scan_reply(data: serde_json::Value, from: IpAddr) -> Option<ScanReply> {
+    let raw: RawScanReply = serde_json::from_value(data).ok()?;
+    let sender = match from {
+        IpAddr::V4(ip) => Some(ip),
+        IpAddr::V6(ip) => ip.to_ipv4_mapped(),
+    };
+    Some(ScanReply {
+        ip: raw.ip.or(sender)?,
+        device: raw.device,
+        sku: raw.sku,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,13 +123,15 @@ pub fn native_id(device: &str) -> String {
 mod tests {
     use super::{Incoming, Outgoing, ScanReply, StatusReply, native_id, parse};
     use hestia_core::Rgb;
-    use std::net::Ipv4Addr;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    const SENDER: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 30));
 
     #[test]
     fn parses_scan_reply() {
         let raw = br#"{"msg":{"cmd":"scan","data":{"ip":"192.168.1.23","device":"1F:80:C5:32:32:36:72:4E","sku":"H6056","bleVersionHard":"3.01.01","wifiVersionSoft":"1.02.03"}}}"#;
         assert_eq!(
-            parse(raw),
+            parse(raw, SENDER),
             Some(Incoming::Scan(ScanReply {
                 ip: Ipv4Addr::new(192, 168, 1, 23),
                 device: "1F:80:C5:32:32:36:72:4E".to_owned(),
@@ -119,10 +141,23 @@ mod tests {
     }
 
     #[test]
+    fn scan_reply_without_ip_uses_the_sender() {
+        let raw = br#"{"msg":{"cmd":"scan","data":{"device":"2D:71:E3:F5:A8:D5:68:B7","sku":"H6056","bleVersionHard":"3.08.01","bleVersionSoft":"1.00.03","wifiVersionHard":"4.01.00","wifiVersionSoft":"1.00.16"}}}"#;
+        assert_eq!(
+            parse(raw, SENDER),
+            Some(Incoming::Scan(ScanReply {
+                ip: Ipv4Addr::new(192, 168, 1, 30),
+                device: "2D:71:E3:F5:A8:D5:68:B7".to_owned(),
+                sku: "H6056".to_owned(),
+            }))
+        );
+    }
+
+    #[test]
     fn parses_status_reply() {
         let raw = br#"{"msg":{"cmd":"devStatus","data":{"onOff":1,"brightness":100,"color":{"r":255,"g":0,"b":0},"colorTemInKelvin":7200}}}"#;
         assert_eq!(
-            parse(raw),
+            parse(raw, SENDER),
             Some(Incoming::Status(StatusReply {
                 on_off: 1,
                 brightness: 100,
@@ -134,8 +169,11 @@ mod tests {
 
     #[test]
     fn ignores_garbage_and_unknown_commands() {
-        assert_eq!(parse(b"not json"), None);
-        assert_eq!(parse(br#"{"msg":{"cmd":"turn","data":{"value":1}}}"#), None);
+        assert_eq!(parse(b"not json", SENDER), None);
+        assert_eq!(
+            parse(br#"{"msg":{"cmd":"turn","data":{"value":1}}}"#, SENDER),
+            None
+        );
     }
 
     #[test]
