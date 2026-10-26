@@ -223,7 +223,10 @@ async fn graphs_command_the_house() {
     }));
     let trial = automations.test(card.clone()).await.unwrap();
     assert_eq!(trial.steps[1].detail, "Lampe : allumé, Luminosité 30");
-    assert_eq!(trial.steps[2].detail, "PC : hors ligne", "the computer is online: inverted");
+    assert_eq!(
+        trial.steps[2].detail, "PC : hors ligne",
+        "the computer is online: inverted"
+    );
     let mut document = automations.document();
     document.automations.push(card);
     let saved = automations.replace(document).unwrap();
@@ -231,7 +234,10 @@ async fn graphs_command_the_house() {
     automations.run_now(&saved.automations[3].id).unwrap();
     wait_for(&hub, "house:pc", "online", false).await;
     assert_eq!(hub.value(&id("house:lamp"), "on"), Some(Value::Bool(true)));
-    assert_eq!(hub.value(&id("house:lamp"), "brightness"), Some(Value::Number(30.0)));
+    assert_eq!(
+        hub.value(&id("house:lamp"), "brightness"),
+        Some(Value::Number(30.0))
+    );
 
     assert!(dir.join("automations.json").exists());
     assert!(

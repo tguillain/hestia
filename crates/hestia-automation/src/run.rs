@@ -406,7 +406,10 @@ pub(crate) fn within(now: &Zoned, after: Option<&str>, before: Option<&str>, day
 
 fn label(automations: &Automations, device: &DeviceId, point: &str) -> String {
     let (name, spec) = lookup(automations, device, point);
-    format!("{name} · {}", spec.as_ref().map_or(point, |spec| spec.label.as_str()))
+    format!(
+        "{name} · {}",
+        spec.as_ref().map_or(point, |spec| spec.label.as_str())
+    )
 }
 
 /// « Chambre : allumé », « Chambre : Luminosité 40 % ».
@@ -420,7 +423,11 @@ pub(crate) fn describe(
 }
 
 /// « Chambre : allumé, Luminosité 40 %, Couleur #ffb450 ».
-fn describe_all(automations: &Automations, device: &DeviceId, writes: &[(String, Value)]) -> String {
+fn describe_all(
+    automations: &Automations,
+    device: &DeviceId,
+    writes: &[(String, Value)],
+) -> String {
     let name = lookup(automations, device, "").0;
     let parts: Vec<String> = writes
         .iter()
@@ -430,7 +437,11 @@ fn describe_all(automations: &Automations, device: &DeviceId, writes: &[(String,
 }
 
 /// The device's name and the point's description, when known.
-fn lookup(automations: &Automations, device: &DeviceId, point: &str) -> (String, Option<PointSpec>) {
+fn lookup(
+    automations: &Automations,
+    device: &DeviceId,
+    point: &str,
+) -> (String, Option<PointSpec>) {
     match automations.hub.device(device) {
         Some(snapshot) => {
             let spec = snapshot

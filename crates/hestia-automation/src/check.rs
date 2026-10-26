@@ -141,7 +141,10 @@ fn check_step(document: &Document, step: &Step) -> Result<(), String> {
             if values.is_empty() && toggle.is_none() {
                 return Err("une étape « Régler un appareil » ne change rien".to_owned());
             }
-            if toggle.as_ref().is_some_and(|point| values.contains_key(point)) {
+            if toggle
+                .as_ref()
+                .is_some_and(|point| values.contains_key(point))
+            {
                 return Err("un réglage à la fois inversé et fixé".to_owned());
             }
             Ok(())
