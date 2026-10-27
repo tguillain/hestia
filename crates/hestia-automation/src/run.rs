@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 use crate::Automations;
-use crate::model::{Automation, Daylight, Occupancy, Op, Rule, Step, parse_time};
+use crate::model::{Automation, Daylight, Occupancy, Op, Priority, Rule, Step, parse_time};
 use crate::sun::sunrise_sunset;
 
 /// A run longer than this is a runaway graph, whatever it says.
@@ -188,7 +188,41 @@ async fn step(automations: &Arc<Automations>, step: &Step, dry: bool) -> Outcome
                 Err(problem) => (StepStatus::Failed, clip(&problem), None),
             }
         }
+        Step::Notify {
+            title,
+            message,
+            priority,
+        } => notify(automations, title, message, *priority, dry).await,
         _ => (StepStatus::Done, String::new(), Some("out")),
+    }
+}
+
+/// « Prévenir »: through the notifier Réglages set up.
+async fn notify(
+    automations: &Automations,
+    title: &str,
+    message: &str,
+    priority: Priority,
+    dry: bool,
+) -> Outcome {
+    let shown = if title.is_empty() {
+        clip(message)
+    } else {
+        clip(&format!("{title} : {message}"))
+    };
+    if dry {
+        return (StepStatus::Simulated, shown, Some("out"));
+    }
+    let Some(notifier) = automations.notifier() else {
+        return (
+            StepStatus::Failed,
+            "notifications non réglées (Réglages → Notifications)".to_owned(),
+            None,
+        );
+    };
+    match notifier.notify(title, message, priority).await {
+        Ok(()) => (StepStatus::Done, shown, Some("out")),
+        Err(problem) => (StepStatus::Failed, clip(&problem), None),
     }
 }
 

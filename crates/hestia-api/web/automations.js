@@ -30,7 +30,9 @@ const STEPS = {
   toggle: { group: 'action', title: 'Régler un appareil', hidden: true },
   scene: { group: 'action', title: 'Lancer une scène', hint: 'Plusieurs lampes d’un coup' },
   lights_off: { group: 'action', title: 'Éteindre toutes les lumières', hint: 'Les lampes seulement, pas le Wi-Fi ni les prises' },
+  notify: { group: 'action', title: 'Prévenir', hint: 'Une notification sur ton téléphone' },
 };
+const PRIORITIES = [['low', 'Discrète'], ['normal', 'Normale'], ['high', 'Importante'], ['urgent', 'Urgente']];
 const GROUPS = { trigger: 'Déclencheurs', logic: 'Logique', action: 'Actions' };
 const PORT_LABELS = { yes: 'oui', no: 'non', ok: 'ok', timeout: 'délai' };
 const STATUS_PORT = { done: 'out', simulated: 'out', yes: 'yes', no: 'no', ok: 'ok', timeout: 'timeout' };
@@ -138,6 +140,12 @@ function describeStep(ui, step, scenes) {
     case 'device': return settingWords(ui, step).join(' · ') || 'rien à changer';
     case 'scene': return `« ${scenes.find((scene) => scene.id === step.scene)?.name ?? '?'} »`;
     case 'lights_off': return 'Toutes les lampes allumées';
+    case 'notify': {
+      const message = step.message?.trim() ? step.message : '…';
+      const text = step.title ? `${step.title} : ${message}` : message;
+      const loud = step.priority && step.priority !== 'normal' ? ` (${PRIORITIES.find(([key]) => key === step.priority)?.[1].toLowerCase()})` : '';
+      return `« ${text} »${loud}`;
+    }
     default: return step.type;
   }
 }
@@ -212,6 +220,7 @@ function newStep(ui, type, scenes) {
       return { type, device: device?.id ?? '', values: on ? { [on.key]: true } : {} };
     }
     case 'scene': return { type, scene: scenes[0]?.id ?? '' };
+    case 'notify': return { type, title: 'Hestia', message: '', priority: 'normal' };
     default: return { type };
   }
 }
@@ -1156,6 +1165,25 @@ function buildEditor(ui, root, doc, automation, initialRuns) {
         scene.value = node.scene;
         scene.addEventListener('change', () => { node.scene = scene.value; changed(); });
         fields.push(field('Scène', scene));
+        break;
+      }
+      case 'notify': {
+        const title = h('input', { type: 'text', value: node.title ?? '', maxlength: 100, placeholder: 'Hestia' });
+        title.addEventListener('input', () => { node.title = title.value; changed(); });
+        const message = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'La porte du garage est restée ouverte' });
+        message.value = node.message ?? '';
+        message.addEventListener('input', () => { node.message = message.value; changed(); });
+        const missing = h('p', { class: 'form-error', hidden: Boolean(node.message?.trim()) }, 'Écris le message à envoyer.');
+        message.addEventListener('input', () => { missing.hidden = Boolean(message.value.trim()); });
+        let priority;
+        const pick = (value) => {
+          node.priority = value;
+          priority.replaceWith(priority = segmented(PRIORITIES, value, pick));
+          changed();
+        };
+        priority = segmented(PRIORITIES, node.priority ?? 'normal', pick);
+        fields.push(field('Titre', title), field('Message', message), missing, field('Importance', priority),
+          h('p', { class: 'meta' }, 'Envoyée par ntfy, réglé dans ', h('a', { href: '#reglages' }, 'Réglages'), '. « Tester » n’envoie rien.'));
         break;
       }
       default:

@@ -17,8 +17,8 @@ boucle de contrôle.
 - **Apple Home** : pont HomeKit (HAP) natif, local, appairage par QR code.
 - **Automatisations** façon n8n : des graphes déclencheur → conditions → actions dessinés sur un
   canevas (heure, soleil, présence, changement ou seuil d'un appareil ; « si… », attentes ; réglages,
-  scènes), avec essai sans rien commander et historique des exécutions. Scènes enregistrées depuis
-  l'état des lampes.
+  scènes, notifications sur le téléphone via ntfy), avec essai sans rien commander et historique
+  des exécutions. Scènes enregistrées depuis l'état des lampes.
 - **Présence** : qui est à la maison, d'après les téléphones connectés à la Freebox.
 - **Freebox** : débits, IP externe, températures, ventilateurs, interrupteur Wi-Fi.
 - **Supervision** : serveurs Minecraft, présence des machines du réseau, santé du Raspberry Pi

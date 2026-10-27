@@ -683,6 +683,7 @@ function renderSettings(user) {
       homekitSettings(),
       freeboxSettings(),
       presenceSettings(),
+      notificationSettings(),
       tokenSettings(),
       accountSettings(user),
       updateSettings(),
@@ -822,6 +823,51 @@ function copyButton(label, text) {
     }
   });
   return button;
+}
+
+function notificationSettings() {
+  const status = h('div');
+  const server = h('input', { name: 'server', type: 'url', placeholder: 'https://ntfy.example.fr', autocapitalize: 'none', spellcheck: 'false' });
+  const topic = h('input', { name: 'topic', placeholder: 'maison', autocapitalize: 'none', spellcheck: 'false', pattern: '[A-Za-z0-9_\\-]{1,64}' });
+  const token = h('input', { name: 'token', type: 'password', autocomplete: 'off', placeholder: 'tk_…' });
+  const send = h('button', { class: 'pill', type: 'button' }, 'Envoyer un essai');
+  const form = h('form', { class: 'inline-form' },
+    h('label', { class: 'field-label' }, 'Serveur', server),
+    h('label', { class: 'field-label' }, 'Sujet', topic),
+    h('label', { class: 'field-label' }, 'Jeton d’accès', token),
+    h('button', { class: 'primary inline', type: 'submit' }, 'Enregistrer'),
+  );
+  let saved = null;
+  const load = () => attempt(async () => {
+    saved = await api('GET', '/api/setup/ntfy');
+    server.value = saved.server ?? '';
+    topic.value = saved.topic ?? '';
+    token.value = '';
+    // An empty field keeps the saved token.
+    token.placeholder = saved.token ? '•••• enregistré' : 'tk_… (facultatif)';
+    send.hidden = !saved.server;
+    status.replaceChildren(saved.server
+      ? line(`✓ Notifications envoyées sur « ${saved.topic} ». Abonne-toi à ce sujet dans l’app ntfy.`, 'ok-line')
+      : line('Pas encore réglé : les étapes « Prévenir » échouent.', 'meta'));
+  });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const body = { server: server.value, topic: topic.value };
+    // An empty field keeps the saved token; the token itself is never sent back.
+    if (token.value) body.token = token.value;
+    if (await attempt(() => api('PUT', '/api/setup/ntfy', body))) {
+      toast(server.value.trim() ? 'Notifications enregistrées.' : 'Notifications désactivées.');
+      load();
+    }
+  });
+  send.addEventListener('click', async () => {
+    send.disabled = true;
+    if (await attempt(() => api('POST', '/api/setup/ntfy/test'))) toast('Notification envoyée : regarde ton téléphone.');
+    send.disabled = false;
+  });
+  load();
+  return settingsCard('Notifications', 'Les étapes « Prévenir » des automatisations, sur ton téléphone avec l’app ntfy. Vider le serveur les désactive.',
+    h('div', { class: 'setting-body' }, status, form, send));
 }
 
 function tokenSettings() {

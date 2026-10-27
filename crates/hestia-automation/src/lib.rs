@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use hestia_core::{Command, DeviceId, Origin, Semantic, Value};
 use hestia_hub::storage::{load_json, save_json};
-use hestia_hub::{DeviceSnapshot, Hub, now_millis};
+use hestia_hub::{BoxFuture, DeviceSnapshot, Hub, now_millis};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
@@ -27,7 +27,7 @@ pub use capture::capture;
 pub use check::{MAX_EDGES, MAX_NODES};
 pub use model::{
     Automation, Daylight, Document, Edge, Graph, Location, Mode, Node, Occupancy, Op,
-    PresenceEvent, Rule, Scene, SetPoint, Step, SunEvent,
+    PresenceEvent, Priority, Rule, Scene, SetPoint, Step, SunEvent,
 };
 pub use run::{MAX_STEPS, Run, RunStatus, StepLog, StepStatus, show};
 
@@ -38,6 +38,18 @@ const MAX_QUEUE: usize = 10;
 /// Runs kept in memory for the page.
 const RECENT_RUNS: usize = 200;
 
+/// Delivers the « Prévenir » steps (ntfy, set up in Réglages).
+pub trait Notifier: Send + Sync {
+    /// # Errors
+    /// Why the notification did not go out, for the household.
+    fn notify<'a>(
+        &'a self,
+        title: &'a str,
+        message: &'a str,
+        priority: Priority,
+    ) -> BoxFuture<'a, Result<(), String>>;
+}
+
 pub struct Automations {
     hub: Arc<Hub>,
     path: PathBuf,
@@ -45,6 +57,7 @@ pub struct Automations {
     document: RwLock<Document>,
     lanes: Mutex<HashMap<String, Lane>>,
     runs: Mutex<VecDeque<Run>>,
+    notifier: RwLock<Option<Arc<dyn Notifier>>>,
 }
 
 /// One automation's runs: they take turns.
@@ -88,7 +101,23 @@ impl Automations {
             document: RwLock::new(document),
             lanes: Mutex::new(HashMap::new()),
             runs: Mutex::new(runs),
+            notifier: RwLock::new(None),
         }))
+    }
+
+    /// Where « Prévenir » steps send their notifications.
+    pub fn set_notifier(&self, notifier: Arc<dyn Notifier>) {
+        *self
+            .notifier
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(notifier);
+    }
+
+    fn notifier(&self) -> Option<Arc<dyn Notifier>> {
+        self.notifier
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// Starts watching the clock and the hub.

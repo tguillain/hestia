@@ -1,10 +1,12 @@
 //! Automations running against a real hub and a fake driver.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use hestia_automation::{Automation, Automations, Document, RunStatus, StepStatus};
+use hestia_automation::{
+    Automation, Automations, Document, Notifier, Priority, RunStatus, StepStatus,
+};
 use hestia_core::{Command, DeviceId, DeviceInfo, Origin, PointKind, PointSpec, Semantic, Value};
 use hestia_hub::{BoxFuture, Driver, DriverContext, Hub, spawn_driver};
 
@@ -275,6 +277,73 @@ async fn graphs_command_the_house() {
     assert!(
         dir.join("automation-runs.jsonl").exists(),
         "finished runs are kept"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Keeps what it was asked to send.
+#[derive(Default)]
+struct Outbox(Mutex<Vec<(String, String, Priority)>>);
+
+impl Notifier for Outbox {
+    fn notify<'a>(
+        &'a self,
+        title: &'a str,
+        message: &'a str,
+        priority: Priority,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        let sent = (title.to_owned(), message.to_owned(), priority);
+        Box::pin(async move {
+            self.0.lock().unwrap().push(sent);
+            Ok(())
+        })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn notifications_go_out_once_set_up() {
+    let hub = Hub::new(HashMap::new());
+    let dir = std::env::temp_dir().join(format!("hestia-notify-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let automations = Automations::open(Arc::clone(&hub), &dir).unwrap();
+    let warn = automation(serde_json::json!({
+        "name": "Alerte", "enabled": false,
+        "graph": {
+            "nodes": [
+                {"id": "t", "type": "manual"},
+                {"id": "n", "type": "notify", "title": "Pi", "message": "Trop chaud", "priority": "high"}
+            ],
+            "edges": [{"from": "t", "to": "n"}]
+        }
+    }));
+    let saved = automations
+        .replace(Document {
+            automations: vec![warn.clone()],
+            ..Document::default()
+        })
+        .unwrap();
+    let id = saved.automations[0].id.clone();
+
+    // Nothing set up yet: the step says where to go.
+    automations.run_now(&id).unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let run = &automations.runs(Some(&id), 1)[0];
+    assert_eq!(run.status, RunStatus::Failed);
+    assert!(run.steps[1].detail.contains("Réglages"));
+
+    let outbox = Arc::new(Outbox::default());
+    automations.set_notifier(Arc::clone(&outbox) as Arc<dyn Notifier>);
+    let trial = automations.test(warn).await.unwrap();
+    assert_eq!(trial.steps[1].status, StepStatus::Simulated);
+    assert_eq!(trial.steps[1].detail, "Pi : Trop chaud");
+    assert!(outbox.0.lock().unwrap().is_empty(), "a test sends nothing");
+
+    automations.run_now(&id).unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(automations.runs(Some(&id), 1)[0].status, RunStatus::Done);
+    assert_eq!(
+        *outbox.0.lock().unwrap(),
+        [("Pi".to_owned(), "Trop chaud".to_owned(), Priority::High)]
     );
     let _ = std::fs::remove_dir_all(&dir);
 }

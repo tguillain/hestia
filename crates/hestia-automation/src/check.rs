@@ -9,6 +9,8 @@ pub const MAX_NODES: usize = 60;
 pub const MAX_EDGES: usize = 120;
 const MAX_DELAY_S: u32 = 24 * 3600;
 const MAX_OFFSET_MIN: i32 = 6 * 60;
+const MAX_TITLE_CHARS: usize = 100;
+const MAX_MESSAGE_CHARS: usize = 1000;
 
 /// # Errors
 /// The first problem found.
@@ -146,6 +148,20 @@ fn check_step(document: &Document, step: &Step) -> Result<(), String> {
                 .is_some_and(|point| values.contains_key(point))
             {
                 return Err("un réglage à la fois inversé et fixé".to_owned());
+            }
+            Ok(())
+        }
+        Step::Notify { title, message, .. } => {
+            if message.trim().is_empty() {
+                return Err("une notification sans message".to_owned());
+            }
+            if message.chars().count() > MAX_MESSAGE_CHARS {
+                return Err(format!(
+                    "un message de plus de {MAX_MESSAGE_CHARS} caractères"
+                ));
+            }
+            if title.chars().count() > MAX_TITLE_CHARS {
+                return Err(format!("un titre de plus de {MAX_TITLE_CHARS} caractères"));
             }
             Ok(())
         }
@@ -321,6 +337,11 @@ mod tests {
                 serde_json::json!([{"id": "t", "type": "manual"}, {"id": "d", "type": "device", "device": "x:y"}]),
                 serde_json::json!([{"from": "t", "to": "d"}]),
                 "ne change rien",
+            ),
+            (
+                serde_json::json!([{"id": "t", "type": "manual"}, {"id": "n", "type": "notify", "message": "  "}]),
+                serde_json::json!([{"from": "t", "to": "n"}]),
+                "sans message",
             ),
         ];
         for (nodes, edges, expected) in cases {

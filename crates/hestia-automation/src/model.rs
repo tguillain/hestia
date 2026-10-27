@@ -201,6 +201,25 @@ pub enum Step {
     },
     /// Every lamp (a switch with brightness or colour), never other switches such as Wi-Fi.
     LightsOff,
+    /// « Prévenir »: a notification on the household's phones.
+    Notify {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        title: String,
+        message: String,
+        #[serde(default)]
+        priority: Priority,
+    },
+}
+
+/// How insistent a notification is: a quiet one does not ring, an urgent one rings longer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Priority {
+    Low,
+    #[default]
+    Normal,
+    High,
+    Urgent,
 }
 
 fn yes() -> bool {

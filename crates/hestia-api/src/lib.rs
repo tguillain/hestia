@@ -7,6 +7,7 @@ mod client;
 mod error;
 pub mod github;
 mod mcp;
+mod ntfy;
 pub mod release;
 mod routes;
 mod security;
@@ -30,6 +31,7 @@ use tokio::sync::Semaphore;
 pub use auth::{
     Auth, McpTokens, TokenInfo, TokenScope, UserStore, hash_password, hash_password_with,
 };
+pub use ntfy::{Ntfy, NtfySettings};
 pub use routes::{ChartConfig, HEALTHY_AFTER, SeriesSelector, confirm_release};
 
 const BODY_LIMIT: usize = 16 * 1024;
@@ -64,6 +66,8 @@ pub struct Setup {
     pub matter: Option<MatterSetup>,
     /// Scenes and rules.
     pub automations: Option<Arc<hestia_automation::Automations>>,
+    /// Notifications sent by automations.
+    pub ntfy: Option<Arc<Ntfy>>,
 }
 
 /// The Matter driver as the Settings page sees it.

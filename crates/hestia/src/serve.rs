@@ -50,6 +50,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         });
     tokio::spawn(log_events(Arc::clone(&hub)));
     let automations = hestia_automation::Automations::open(Arc::clone(&hub), &config.data_dir)?;
+    let ntfy = hestia_api::Ntfy::open(&config.data_dir)?;
+    automations.set_notifier(Arc::clone(&ntfy) as Arc<dyn hestia_automation::Notifier>);
     automations.spawn();
     // Apple Home is a bonus: a failure there must not take the dashboard down.
     let homekit = if config.homekit.enabled {
@@ -86,6 +88,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             discovery: Some(discovery),
             matter,
             automations: Some(automations),
+            ntfy: Some(ntfy),
         },
     };
     let router = hestia_api::router(Arc::clone(&hub), auth, dashboard);

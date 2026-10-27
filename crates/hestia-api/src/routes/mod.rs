@@ -57,6 +57,8 @@ pub(crate) fn api() -> Router<AppState> {
         )
         .route("/api/setup/users/{name}", delete(setup::delete_user))
         .route("/api/setup/password", post(setup::change_password))
+        .route("/api/setup/ntfy", get(setup::ntfy).put(setup::save_ntfy))
+        .route("/api/setup/ntfy/test", post(setup::test_ntfy))
         .route(
             "/api/setup/update",
             get(update::status)

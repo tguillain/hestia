@@ -21,7 +21,8 @@ use tracing::info;
 use super::CurrentUser;
 use crate::auth::{TokenScope, hash_password, valid_name};
 use crate::error::ApiError;
-use crate::{AppState, Setup};
+use crate::{AppState, Ntfy, NtfySettings, Setup};
+use hestia_automation::Priority;
 
 const MIN_PASSWORD_CHARS: usize = 10;
 const AUTHORIZATION_WAIT: Duration = Duration::from_secs(130);
@@ -314,6 +315,81 @@ fn freebox_config(state: &AppState) -> Result<hestia_freebox::FreeboxConfig, Api
         .freebox
         .clone()
         .ok_or_else(|| ApiError::NotFound("aucun pilote Freebox dans la configuration".to_owned()))
+}
+
+// ---- Notifications ------------------------------------------------------------------------
+
+/// The ntfy settings; the token itself never leaves the server.
+pub(crate) async fn ntfy(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+) -> Result<Json<Json_>, ApiError> {
+    let settings = ntfy_of(&state)?.settings();
+    Ok(Json(json!({
+        "server": settings.as_ref().map(|settings| &settings.server),
+        "topic": settings.as_ref().map(|settings| &settings.topic),
+        "token": settings.is_some_and(|settings| settings.token.is_some()),
+    })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct NtfyForm {
+    server: String,
+    #[serde(default)]
+    topic: String,
+    /// Missing: keep the saved token. Empty: no token.
+    #[serde(default)]
+    token: Option<String>,
+}
+
+/// An empty server switches notifications off.
+pub(crate) async fn save_ntfy(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Json(form): Json<NtfyForm>,
+) -> Result<StatusCode, ApiError> {
+    let ntfy = ntfy_of(&state)?;
+    let settings = if form.server.trim().is_empty() {
+        None
+    } else {
+        let token = match form.token {
+            None => ntfy.settings().and_then(|settings| settings.token),
+            Some(token) => Some(token),
+        };
+        Some(NtfySettings {
+            server: form.server,
+            topic: form.topic,
+            token,
+        })
+    };
+    let on = settings.is_some();
+    ntfy.save(settings).map_err(ApiError::Invalid)?;
+    info!(user = user.name, on, "notifications set up");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn test_ntfy(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+) -> Result<StatusCode, ApiError> {
+    ntfy_of(&state)?
+        .send(
+            "Hestia",
+            "Les notifications fonctionnent.",
+            Priority::Normal,
+        )
+        .await
+        .map_err(ApiError::BadGateway)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn ntfy_of(state: &AppState) -> Result<&Arc<Ntfy>, ApiError> {
+    state
+        .setup
+        .config
+        .ntfy
+        .as_ref()
+        .ok_or_else(|| ApiError::NotFound("notifications indisponibles".to_owned()))
 }
 
 // ---- AI access tokens -------------------------------------------------------------------
