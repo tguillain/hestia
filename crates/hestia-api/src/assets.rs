@@ -45,6 +45,27 @@ const ASSETS: &[Asset] = &[
         mime: "image/svg+xml",
         body: include_bytes!("../web/icon.svg"),
     },
+    // PNGs for the iPhone home screen and browsers without SVG favicons.
+    Asset {
+        path: "/apple-touch-icon.png",
+        mime: "image/png",
+        body: include_bytes!("../web/apple-touch-icon.png"),
+    },
+    Asset {
+        path: "/icon-512.png",
+        mime: "image/png",
+        body: include_bytes!("../web/icon-512.png"),
+    },
+    Asset {
+        path: "/favicon-32.png",
+        mime: "image/png",
+        body: include_bytes!("../web/favicon-32.png"),
+    },
+    Asset {
+        path: "/manifest.webmanifest",
+        mime: "application/manifest+json",
+        body: include_bytes!("../web/manifest.webmanifest"),
+    },
 ];
 
 pub(crate) fn routes() -> Router<AppState> {
